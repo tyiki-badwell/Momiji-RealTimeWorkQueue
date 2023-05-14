@@ -1,26 +1,41 @@
 ﻿using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using System.Text;
 using Microsoft.Extensions.Logging;
-using Momiji.Internal.Debug;
+using Momiji.Core.Threading;
 using Momiji.Interop.RTWorkQ;
 using RTWorkQ = Momiji.Interop.RTWorkQ.NativeMethods;
 
 namespace Momiji.Core.RTWorkQueue;
 
 [SupportedOSPlatform("windows")]
-public class RTWorkQueue : IRTWorkQueue
+internal class RTWorkQueue : IRTWorkQueue
 {
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<RTWorkQueue> _logger;
     private bool _disposed;
     private bool _shutdown;
-    internal ThreadDebug.ApartmentType CreatedApartmentType { get; init; }
+    internal ApartmentType CreatedApartmentType { get; init; }
 
     private readonly RTWorkQueueManager _parent;
     private readonly RTWorkQ.WorkQueueId _workQueueid;
 
     private readonly int _taskId;
+
+    private RTWorkQ.DeadlineKey? _deadlineKey;
+
+    private RTWorkQueue(
+        ILoggerFactory loggerFactory,
+        RTWorkQueueManager parent
+    )
+    {
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
+        _loggerFactory = loggerFactory;
+        _logger = _loggerFactory.CreateLogger<RTWorkQueue>();
+        _parent = parent;
+        CreatedApartmentType = ApartmentType.GetApartmentType();
+    }
 
     internal RTWorkQueue(
         ILoggerFactory loggerFactory,
@@ -28,13 +43,8 @@ public class RTWorkQueue : IRTWorkQueue
         string usageClass,
         IRTWorkQueue.TaskPriority basePriority,
         int taskId
-    )
+    ) : this(loggerFactory, parent)
     {
-        _loggerFactory = loggerFactory;
-        _logger = _loggerFactory.CreateLogger<RTWorkQueue>();
-        _parent = parent;
-
-        CreatedApartmentType = ThreadDebug.GetApartmentType();
         _logger.LogTrace($"create RTWorkQueue(shared) {CreatedApartmentType}");
 
         if (usageClass != "")
@@ -71,13 +81,8 @@ public class RTWorkQueue : IRTWorkQueue
         ILoggerFactory loggerFactory,
         RTWorkQueueManager parent,
         IRTWorkQueue.WorkQueueType type
-    )
+    ) : this(loggerFactory, parent)
     {
-        _loggerFactory = loggerFactory;
-        _logger = _loggerFactory.CreateLogger<RTWorkQueue>();
-        _parent = parent;
-
-        CreatedApartmentType = ThreadDebug.GetApartmentType();
         _logger.LogTrace($"create RTWorkQueue(private) {CreatedApartmentType}");
 
         //Lock +1
@@ -94,13 +99,8 @@ public class RTWorkQueue : IRTWorkQueue
         ILoggerFactory loggerFactory,
         RTWorkQueueManager parent,
         RTWorkQueue workQueue
-    )
+    ) : this(loggerFactory, parent)
     {
-        _loggerFactory = loggerFactory;
-        _logger = _loggerFactory.CreateLogger<RTWorkQueue>();
-        _parent = parent;
-
-        CreatedApartmentType = ThreadDebug.GetApartmentType();
         _logger.LogTrace($"create RTWorkQueue(serial) {CreatedApartmentType}");
 
         //Lock +1
@@ -140,6 +140,10 @@ public class RTWorkQueue : IRTWorkQueue
         {
         }
 
+        //TODO STAから呼ばれたときはMTAに移動して解放しないとダメ？
+
+        CancelDeadline();
+
         if (_workQueueid.Id != default)
         {
             try
@@ -160,27 +164,153 @@ public class RTWorkQueue : IRTWorkQueue
     {
         if (_shutdown)
         {
-        //    throw new InvalidOperationException("in shutdown.");
+            throw new InvalidOperationException("in shutdown.");
+        }
+    }
+
+    private class LockToken : IDisposable
+    {
+        private readonly ILogger<LockToken> _logger;
+        private bool _disposed;
+
+        private readonly RTWorkQueue _parent;
+
+        public LockToken(
+            RTWorkQueue parent,
+            ILoggerFactory loggerFactory
+        )
+        {
+            _parent = parent;
+            _logger = loggerFactory.CreateLogger<LockToken>();
+        }
+
+        ~LockToken()
+        {
+            Dispose(false);
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed)
+            {
+                _logger.LogDebug("Disposed");
+                return;
+            }
+
+            _logger.LogTrace("Dispose start");
+
+            if (disposing)
+            {
+            }
+
+            try
+            {
+                _parent.Unlock();
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Unlock failed");
+            }
+
+            _disposed = true;
+            _logger.LogTrace("Dispose end");
+        }
+    }
+
+    public IDisposable Lock()
+    {
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
+        _logger.LogTrace("RtwqLockWorkQueue");
+        Marshal.ThrowExceptionForHR(_workQueueid.RtwqLockWorkQueue());
+
+        return new LockToken(this, _loggerFactory);
+    }
+
+    internal void Unlock()
+    {
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
+        _logger.LogTrace("RtwqUnlockWorkQueue");
+        Marshal.ThrowExceptionForHR(_workQueueid.RtwqUnlockWorkQueue());
+    }
+
+    public SafeHandle Join(
+        SafeHandle handle    
+    )
+    {
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
+        _logger.LogTrace("RtwqJoinWorkQueue");
+        Marshal.ThrowExceptionForHR(_workQueueid.RtwqJoinWorkQueue(handle, out var cookie));
+        return cookie;
+    }
+
+    public void SetDeadline(
+        long deadlineInHNS,
+        long preDeadlineInHNS
+    )
+    {
+        CancelDeadline();
+
+        if (preDeadlineInHNS == 0)
+        {
+            _logger.LogTrace("RtwqSetDeadline");
+            Marshal.ThrowExceptionForHR(_workQueueid.RtwqSetDeadline(deadlineInHNS, out _deadlineKey));
+        }
+        else
+        {
+            _logger.LogTrace("RtwqSetDeadline2");
+            Marshal.ThrowExceptionForHR(_workQueueid.RtwqSetDeadline2(deadlineInHNS, preDeadlineInHNS, out _deadlineKey));
+        }
+    }
+
+    public void CancelDeadline()
+    {
+        if (_deadlineKey != default)
+        {
+            _logger.LogTrace("RtwqCancelDeadline");
+            _deadlineKey.Dispose();
+            _deadlineKey = null;
         }
     }
 
     public int GetMMCSSTaskId()
     {
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
         Marshal.ThrowExceptionForHR(_workQueueid.RtwqGetWorkQueueMMCSSTaskId(out var taskId));
         return taskId;
     }
     public IRTWorkQueue.TaskPriority GetMMCSSPriority()
     {
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
         Marshal.ThrowExceptionForHR(_workQueueid.RtwqGetWorkQueueMMCSSPriority(out var priority));
         return (IRTWorkQueue.TaskPriority)priority;
     }
 
     public string GetMMCSSClass()
     {
-        var text = new StringBuilder();
-        var length = 0;
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
+        var length = 1;
 
         {
+            Span<char> text = stackalloc char[length];
+
             var result = _workQueueid.RtwqGetWorkQueueMMCSSClass(text, ref length);
             if (result != unchecked((int)0xC00D36B1)) //E_BUFFERTOOSMALL
             {
@@ -200,12 +330,9 @@ public class RTWorkQueue : IRTWorkQueue
             return "";
         }
 
-        if (text.Capacity < length)
-        { //既定の容量以下にはできない
-            text.Capacity = length;
-        }
-
         {
+            Span<char> text = stackalloc char[length];
+
             var result = _workQueueid.RtwqGetWorkQueueMMCSSClass(text, ref length);
             {
                 var e = Marshal.GetExceptionForHR(result);
@@ -213,7 +340,7 @@ public class RTWorkQueue : IRTWorkQueue
                 {
                     throw e;
                 }
-                var text_ = text.ToString();
+                var text_ = new string(text.TrimEnd('\0'));
                 _logger.LogTrace($"GetMMCSSClass {text_}");
                 return text_;
             }
@@ -244,6 +371,9 @@ public class RTWorkQueue : IRTWorkQueue
         int taskId
     )
     {
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
         CheckShutdown();
 
         var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
@@ -278,6 +408,9 @@ public class RTWorkQueue : IRTWorkQueue
 
     public Task UnregisterMMCSSAsync()
     {
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
         CheckShutdown();
 
         var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
@@ -309,6 +442,9 @@ public class RTWorkQueue : IRTWorkQueue
 
     public void SetLongRunning(bool enable)
     {
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
         CheckShutdown();
 
         Marshal.ThrowExceptionForHR(_workQueueid.RtwqSetLongRunning(enable));
@@ -317,18 +453,24 @@ public class RTWorkQueue : IRTWorkQueue
     public void PutWorkItem(
         IRTWorkQueue.TaskPriority priority,
         Action action,
-        Action<Exception?, CancellationToken>? afterAction = default
+        Action<Exception?, CancellationToken>? afterAction = default,
+        CancellationToken ct = default
     )
     {
+        //QueueとAsyncResultを作ったApartmentTypeが一致している必要がある
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
         CheckShutdown();
 
         var asyncResult = _parent.GetAsyncResult(0, _workQueueid, action, afterAction);
 
-        //QueueとAsyncResultを作ったApartmentTypeが一致している必要がある
         try
         {
             _logger.LogTrace($"PutWorkItem Id:{asyncResult.Id} {asyncResult.CreatedApartmentType}");
             asyncResult.WaitingToRun();
+            asyncResult.BindCancellationToken(RTWorkQ.RtWorkItemKey.None, ct);
+
             Marshal.ThrowExceptionForHR(_workQueueid.RtwqPutWorkItem(
                 (RTWorkQ.AVRT_PRIORITY)priority,
                 asyncResult.RtwqAsyncResult
@@ -343,12 +485,13 @@ public class RTWorkQueue : IRTWorkQueue
 
     public Task PutWorkItemAsync(
         IRTWorkQueue.TaskPriority priority,
-        Action action
+        Action action,
+        CancellationToken ct = default
     )
     {
         return _parent.ToAsync(
             (afterAction_) => {
-                PutWorkItem(priority, action, afterAction_);
+                PutWorkItem(priority, action, afterAction_, ct);
             }
         );
     }

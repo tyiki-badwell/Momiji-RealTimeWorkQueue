@@ -1,15 +1,24 @@
-﻿namespace Momiji.Core.RTWorkQueue;
+﻿using System.Runtime.InteropServices;
+
+namespace Momiji.Core.RTWorkQueue;
 
 public interface IRTWorkQueuePlatformEventsHandler : IDisposable
 {
 }
 
-public interface IRTWorkQueueTaskScheduler : IDisposable
+public interface IRTWorkQueueTaskSchedulerManager : IDisposable
 {
-    public TaskScheduler TaskScheduler
-    {
-        get;
-    }
+    public TaskScheduler GetTaskScheduler(
+        string usageClass = "",
+        IRTWorkQueue.WorkQueueType? type = null,
+        bool serial = false,
+        IRTWorkQueue.TaskPriority basePriority = IRTWorkQueue.TaskPriority.NORMAL,
+        int taskId = 0
+    );
+
+    public void ShutdownTaskScheduler(
+        TaskScheduler taskScheduler
+    );
 }
 
 public interface IRTWorkQueueManager : IDisposable
@@ -48,12 +57,24 @@ public interface IRTWorkQueue : IDisposable
     public void PutWorkItem(
         TaskPriority priority,
         Action action,
-        Action<Exception?, CancellationToken>? afterAction = default
+        Action<Exception?, CancellationToken>? afterAction = default,
+        CancellationToken ct = default
     );
 
     public Task PutWorkItemAsync(
         TaskPriority priority,
-        Action action
+        Action action,
+        CancellationToken ct = default
+    );
+    public IDisposable Lock();
+
+    public SafeHandle Join(
+        SafeHandle handle
+    );
+
+    public void SetDeadline(
+        long deadlineInHNS,
+        long preDeadlineInHNS = 0
     );
 
     public int GetMMCSSTaskId();

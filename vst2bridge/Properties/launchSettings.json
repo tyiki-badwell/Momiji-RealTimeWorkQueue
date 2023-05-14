@@ -1,9 +1,0 @@
-{
-  "profiles": {
-    "vst2bridge": {
-      "commandName": "Project",
-      "remoteDebugEnabled": false,
-      "nativeDebugging": true
-    }
-  }
-}
