@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks.Dataflow;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Momiji.Core.Timer;
 using Momiji.Internal.Debug;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Momiji.Core.RTWorkQueue.Tasks;
 
@@ -14,12 +16,17 @@ public class RTWorkQueueTasksTest : IDisposable
     private const int WAIT = 10;
 
     private readonly ILoggerFactory _loggerFactory;
-    private readonly ILogger<RTWorkQueueTasksTest> _logger;
     private readonly RTWorkQueuePlatformEventsHandler _workQueuePlatformEventsHandler;
     private readonly RTWorkQueueTaskSchedulerManager _workQueueTaskSchedulerManager;
 
-    public RTWorkQueueTasksTest()
+    private readonly ITestOutputHelper _output;
+
+    public RTWorkQueueTasksTest(
+        ITestOutputHelper output
+    )
     {
+        _output = output;
+
         var configuration = CreateConfiguration(/*usageClass, 0, taskId*/);
 
         _loggerFactory = LoggerFactory.Create(builder =>
@@ -36,7 +43,6 @@ public class RTWorkQueueTasksTest : IDisposable
             builder.AddConsole();
             builder.AddDebug();
         });
-        _logger = _loggerFactory.CreateLogger<RTWorkQueueTasksTest>();
 
         _workQueuePlatformEventsHandler = new(_loggerFactory);
         //_workQueueManager = new(configuration, _loggerFactory);
@@ -114,12 +120,12 @@ public class RTWorkQueueTasksTest : IDisposable
 
         {
             var (tag, time) = list.ToList()[^1];
-            _logger?.LogInformation($"LAST: {tag}\t{(double)time / 10000}");
+            _output.WriteLine($"LAST: {tag}\t{(double)time / 10000}");
         }
 
         foreach (var (tag, time) in list)
         {
-            _logger?.LogInformation($"{tag}\t{(double)time / 10000}");
+            _output.WriteLine($"{tag}\t{(double)time / 10000}");
         }
     }
 
@@ -186,7 +192,7 @@ public class RTWorkQueueTasksTest : IDisposable
         var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
 
         var thread = new Thread(async () => {
-            _logger!.LogInformation($"thread 1 start {Environment.CurrentManagedThreadId:X}");
+            _output.WriteLine($"thread 1 start {Environment.CurrentManagedThreadId:X}");
             ThreadDebug.PrintObjectContext(_loggerFactory!);
 
             var factory = new TaskFactory(scheduler);
@@ -194,41 +200,41 @@ public class RTWorkQueueTasksTest : IDisposable
             var task =
                 factory.StartNew(() => {
                     ThreadDebug.PrintObjectContext(_loggerFactory!);
-                    _logger!.LogInformation($"task 1 {Environment.CurrentManagedThreadId:X}");
+                    _output.WriteLine($"task 1 {Environment.CurrentManagedThreadId:X}");
                 });
             await task.ContinueWith((task) => {
-                _logger!.LogInformation($"task 1 continue {Environment.CurrentManagedThreadId:X}");
+                _output.WriteLine($"task 1 continue {Environment.CurrentManagedThreadId:X}");
             });
 
             task.Wait();
-            _logger!.LogInformation($"thread 1 end {Environment.CurrentManagedThreadId:X}");
+            _output.WriteLine($"thread 1 end {Environment.CurrentManagedThreadId:X}");
 
             {
                 var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
 
                 var thread = new Thread(async () => {
-                    _logger!.LogInformation($"thread 2 start {Environment.CurrentManagedThreadId:X}");
+                    _output.WriteLine($"thread 2 start {Environment.CurrentManagedThreadId:X}");
                     ThreadDebug.PrintObjectContext(_loggerFactory!);
 
                     var task =
                         factory.StartNew(() => {
                             ThreadDebug.PrintObjectContext(_loggerFactory!);
-                            _logger!.LogInformation($"task 2 {Environment.CurrentManagedThreadId:X}");
+                            _output.WriteLine($"task 2 {Environment.CurrentManagedThreadId:X}");
                         });
                     await task.ContinueWith((task) => {
-                        _logger!.LogInformation($"task 2 continue {Environment.CurrentManagedThreadId:X}");
+                        _output.WriteLine($"task 2 continue {Environment.CurrentManagedThreadId:X}");
                     });
                     task.Wait();
-                    _logger!.LogInformation($"thread 2 end {Environment.CurrentManagedThreadId:X}");
+                    _output.WriteLine($"thread 2 end {Environment.CurrentManagedThreadId:X}");
 
                     tcs.SetResult();
                 });
                 thread.TrySetApartmentState(apartmentState2);
                 thread.Start();
                 await tcs.Task.ContinueWith((task) => {
-                    _logger!.LogInformation($"thread 2 continue {Environment.CurrentManagedThreadId:X}");
+                    _output.WriteLine($"thread 2 continue {Environment.CurrentManagedThreadId:X}");
                 });
-                _logger!.LogInformation($"thread 2 join {Environment.CurrentManagedThreadId:X}");
+                _output.WriteLine($"thread 2 join {Environment.CurrentManagedThreadId:X}");
             }
 
             tcs.SetResult();
@@ -237,10 +243,10 @@ public class RTWorkQueueTasksTest : IDisposable
         thread.Start();
 
         await tcs.Task.ContinueWith((task) => {
-            _logger!.LogInformation($"thread 1 continue {Environment.CurrentManagedThreadId:X}");
+            _output.WriteLine($"thread 1 continue {Environment.CurrentManagedThreadId:X}");
         });
 
-        _logger!.LogInformation($"thread 1 join {Environment.CurrentManagedThreadId:X}");
+        _output.WriteLine($"thread 1 join {Environment.CurrentManagedThreadId:X}");
     }
 
     [Theory]
@@ -363,7 +369,7 @@ public class RTWorkQueueTasksTest : IDisposable
 
             child = factory.StartNew(() => {
                 Task.Delay(100).Wait();
-                _logger?.LogInformation($"2:{Environment.StackTrace}");
+                _output.WriteLine($"2:{Environment.StackTrace}");
 
                 if (childError)
                 {
@@ -375,22 +381,22 @@ public class RTWorkQueueTasksTest : IDisposable
 
             cont = child.ContinueWith((task) => {
                 Task.Delay(200).Wait();
-                _logger?.LogInformation($"3:{Environment.StackTrace}");
+                _output.WriteLine($"3:{Environment.StackTrace}");
 
                 result[2] = 3;
             }, taskContinuationOptions);
 
-            _logger?.LogInformation($"1:{Environment.StackTrace}");
+            _output.WriteLine($"1:{Environment.StackTrace}");
             result[0] = 1;
         });
 
         await parent;
-        _logger?.LogInformation($"Parent end {taskCreationOptionsParent} {taskCreationOptionsChild} {taskContinuationOptions}");
+        _output.WriteLine($"Parent end {taskCreationOptionsParent} {taskCreationOptionsChild} {taskContinuationOptions}");
 
         Assert.Equal(1, result[0]);
 
-        _logger?.LogInformation($"Parent !DenyChildAttach {((taskCreationOptionsParent & TaskCreationOptions.DenyChildAttach) == 0)}");
-        _logger?.LogInformation($"Child AttachedToParent {((taskCreationOptionsChild & TaskCreationOptions.AttachedToParent) != 0)}");
+        _output.WriteLine($"Parent !DenyChildAttach {((taskCreationOptionsParent & TaskCreationOptions.DenyChildAttach) == 0)}");
+        _output.WriteLine($"Child AttachedToParent {((taskCreationOptionsChild & TaskCreationOptions.AttachedToParent) != 0)}");
 
         if (
             ((taskCreationOptionsParent & TaskCreationOptions.DenyChildAttach) == 0)
@@ -415,7 +421,7 @@ public class RTWorkQueueTasksTest : IDisposable
             }
         }
 
-        _logger?.LogInformation($"Continue AttachedToParent {((taskContinuationOptions & TaskContinuationOptions.AttachedToParent) != 0)}");
+        _output.WriteLine($"Continue AttachedToParent {((taskContinuationOptions & TaskContinuationOptions.AttachedToParent) != 0)}");
 
         if (
             ((taskCreationOptionsParent & TaskCreationOptions.DenyChildAttach) == 0)
@@ -444,18 +450,74 @@ public class RTWorkQueueTasksTest : IDisposable
         var scheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
         var factory = new TaskFactory(CancellationToken.None, taskCreationOptionsParent, TaskContinuationOptions.None, scheduler);
 
-        _logger?.LogInformation("START 1");
+        _output.WriteLine("START 1");
         await factory.StartNew(async () => {
-            _logger?.LogInformation("START 2");
+            _output.WriteLine("START 2");
             await factory.StartNew(async () => {
-                _logger?.LogInformation("START 3");
+                _output.WriteLine("START 3");
                 await factory.StartNew(async () => {
                     await Task.Delay(1);
                 });
-                _logger?.LogInformation("END 3");
+                _output.WriteLine("END 3");
             });
-            _logger?.LogInformation("END 2");
+            _output.WriteLine("END 2");
         });
-        _logger?.LogInformation("END 1");
+        _output.WriteLine("END 1");
     }
+
+    private async IAsyncEnumerable<int> GenerateAsync(
+        [EnumeratorCancellation] CancellationToken ct
+    )
+    {
+        var i = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            yield return i++;
+            await Task.Delay(1, ct);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TestAsyncEnumerable(
+        bool rtwqTaskScheduler
+    )
+    {
+        var scheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
+        var factory = new TaskFactory(CancellationToken.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.None, scheduler);
+
+        var counter = new ElapsedTimeCounter();
+
+        using var cts = new CancellationTokenSource();
+
+        var _ = Task.Delay(500).ContinueWith((task) => {
+            _output.WriteLine($"CANCEL {(double)counter.ElapsedTicks / 10_000}");
+            cts.Cancel();
+        });
+
+        try
+        {
+            counter.Reset();
+            _output.WriteLine($"START {(double)counter.ElapsedTicks / 10_000}");
+            await factory.StartNew(async () => {
+                _output.WriteLine($"TASK START {(double)counter.ElapsedTicks / 10_000}");
+                await foreach (var a in GenerateAsync(cts.Token))
+                {
+                    _output.WriteLine($"GENERATE {(double)counter.ElapsedTicks / 10_000} {a}");
+                }
+                _output.WriteLine($"TASK END {(double)counter.ElapsedTicks / 10_000}");
+            });
+            _output.WriteLine($"END {(double)counter.ElapsedTicks / 10_000}");
+        }
+        catch (TaskCanceledException e)
+        {
+            _output.WriteLine($"cancel {e}");
+        }
+
+        await Task.Delay(5000);
+
+        _output.WriteLine($"EXIT {(double)counter.ElapsedTicks / 10_000}");
+    }
+
 }

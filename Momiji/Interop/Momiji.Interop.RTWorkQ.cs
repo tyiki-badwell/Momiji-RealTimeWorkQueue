@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using Microsoft.Win32.SafeHandles;
 
 namespace Momiji.Interop.RTWorkQ;
@@ -10,23 +11,21 @@ internal static class Libraries
 
 internal static partial class NativeMethods
 {
-    //TODO LibraryImport
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    [LibraryImport(Libraries.RTWorkQ)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqRegisterPlatformEvents(
-        [In] IRtwqPlatformEvents platformEvents
+    internal static partial int RtwqRegisterPlatformEvents(
+        IRtwqPlatformEvents platformEvents
     );
 
-    //TODO LibraryImport
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    [LibraryImport(Libraries.RTWorkQ)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqUnregisterPlatformEvents(
-        [In] IRtwqPlatformEvents platformEvents
+    internal static partial int RtwqUnregisterPlatformEvents(
+        IRtwqPlatformEvents platformEvents
     );
 
-    [ComImport]
+    [GeneratedComInterface]
     [Guid("63d9255a-7ff1-4b61-8faf-ed6460dacf2b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    internal interface IRtwqPlatformEvents
+    internal partial interface IRtwqPlatformEvents
     {
         [PreserveSig]
         int InitializationComplete();
@@ -186,49 +185,57 @@ internal static partial class NativeMethods
         return RtwqUnjoinWorkQueue_(workQueueId, hFile);
     }
 
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    [LibraryImport(Libraries.RTWorkQ)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqCreateAsyncResult(
-        [In][MarshalAs(UnmanagedType.IUnknown)] object? appObject,
-        [In] IRtwqAsyncCallback callback,
-        [In][MarshalAs(UnmanagedType.IUnknown)] object? appState,
-        [Out] out IRtwqAsyncResult asyncResult
+    internal static partial int RtwqCreateAsyncResult(
+        [MarshalAs(UnmanagedType.Interface)] object? appObject,
+        IRtwqAsyncCallback callback,
+        [MarshalAs(UnmanagedType.Interface)] object? appState,
+        out IRtwqAsyncResult asyncResult
     );
 
     //RtwqPutWorkItemとの違いは？ platform queueに入る点？
     //stateの中にIRtwqAsyncResultを持ったものをPutして、IRtwqAsyncCallback.Invokeで取り出し、呼び出し元に完了通知をするときに使うもの
     //らしいが、これもWorkQueueに入ってから実行されるのを待つ仕組みになってる様子
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    [LibraryImport(Libraries.RTWorkQ, EntryPoint = "RtwqInvokeCallback")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqInvokeCallback(
-        [In] this IRtwqAsyncResult result
+    private static partial int RtwqInvokeCallback_(
+        IRtwqAsyncResult result
     );
 
+    internal static int RtwqInvokeCallback(
+        this IRtwqAsyncResult result
+    )
+    {
+        return RtwqInvokeCallback_(result);
+    }
+
     //IMFAsyncCallbackと同じGUID
-    [ComImport]
+    [GeneratedComInterface]
     [Guid("a27003cf-2354-4f2a-8d6a-ab7cff15437e"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    internal interface IRtwqAsyncCallback
+    internal partial interface IRtwqAsyncCallback
     {
         [PreserveSig]
         int GetParameters(
-            [In][Out] ref uint pdwFlags,
-            [In][Out] ref WorkQueueId pdwQueue
+            ref uint pdwFlags,
+            ref WorkQueueId pdwQueue
         );
 
         [PreserveSig]
         int Invoke(
-            [In] IRtwqAsyncResult pAsyncResult
+            IRtwqAsyncResult pAsyncResult
         );
     }
 
+    //TODO GeneratedComInterface
     //IMFAsyncResultと同じGUID
-    [ComImport]
+    [GeneratedComInterface]
     [Guid("ac6b7889-0740-4d51-8619-905994a55cc6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    internal interface IRtwqAsyncResult
+    internal partial interface IRtwqAsyncResult
     {
         [PreserveSig]
         int GetState(
-            [Out][MarshalAs(UnmanagedType.IUnknown)] out object? /*IUnknown*/ ppunkState
+            [MarshalAs(UnmanagedType.Interface)] out object? /*IUnknown*/ ppunkState
         );
 
         [PreserveSig]
@@ -241,12 +248,12 @@ internal static partial class NativeMethods
 
         [PreserveSig]
         int GetObject(
-            [Out][MarshalAs(UnmanagedType.IUnknown)] out object? /*IUnknown*/ ppObject
+            [MarshalAs(UnmanagedType.Interface)] out object? ppObject
         );
 
         [PreserveSig]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        object? /*IUnknown*/ GetStateNoAddRef();
+        [return: MarshalAs(UnmanagedType.Interface)] 
+        object /*IUnknown*/ GetStateNoAddRef();
     }
 
     /*
@@ -353,37 +360,73 @@ internal static partial class NativeMethods
         return RtwqGetWorkQueueMMCSSPriority_(dwQueue, out priority);
     }
 
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    [LibraryImport(Libraries.RTWorkQ, EntryPoint = "RtwqBeginRegisterWorkQueueWithMMCSS")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqBeginRegisterWorkQueueWithMMCSS(
-        [In] this WorkQueueId workQueueId,
-        [In][MarshalAs(UnmanagedType.LPWStr)] string usageClass,
-        [In] int dwTaskId,
-        [In] AVRT_PRIORITY lPriority,
-        [In] IRtwqAsyncCallback doneCallback,
-        [In][MarshalAs(UnmanagedType.IUnknown)] object? doneState
+    private static partial int RtwqBeginRegisterWorkQueueWithMMCSS_(
+        WorkQueueId workQueueId,
+        [MarshalAs(UnmanagedType.LPWStr)] string usageClass,
+        int dwTaskId,
+        AVRT_PRIORITY lPriority,
+        IRtwqAsyncCallback doneCallback,
+        [MarshalAs(UnmanagedType.Interface)] object? doneState
     );
 
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    internal static int RtwqBeginRegisterWorkQueueWithMMCSS(
+        this WorkQueueId workQueueId,
+        string usageClass,
+        int dwTaskId,
+        AVRT_PRIORITY lPriority,
+        IRtwqAsyncCallback doneCallback,
+        object? doneState
+    )
+    {
+        return RtwqBeginRegisterWorkQueueWithMMCSS_(workQueueId, usageClass, dwTaskId, lPriority, doneCallback, doneState);
+    }
+
+    [LibraryImport(Libraries.RTWorkQ, EntryPoint = "RtwqEndRegisterWorkQueueWithMMCSS")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqEndRegisterWorkQueueWithMMCSS(
-        [In] this IRtwqAsyncResult result,
-        [Out] out nint taskId
+    private static partial int RtwqEndRegisterWorkQueueWithMMCSS_(
+        IRtwqAsyncResult result,
+        out nint taskId
     );
 
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    internal static int RtwqEndRegisterWorkQueueWithMMCSS(
+        this IRtwqAsyncResult result,
+        out nint taskId
+    )
+    {
+        return RtwqEndRegisterWorkQueueWithMMCSS_(result, out taskId);
+    }
+
+    [LibraryImport(Libraries.RTWorkQ, EntryPoint = "RtwqBeginUnregisterWorkQueueWithMMCSS")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqBeginUnregisterWorkQueueWithMMCSS(
-        [In] this WorkQueueId workQueueId,
-        [In] IRtwqAsyncCallback doneCallback,
-        [In][MarshalAs(UnmanagedType.IUnknown)] object? doneState
+    private static partial int RtwqBeginUnregisterWorkQueueWithMMCSS_(
+        WorkQueueId workQueueId,
+        IRtwqAsyncCallback doneCallback,
+        [MarshalAs(UnmanagedType.Interface)] object? doneState
     );
 
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    internal static int RtwqBeginUnregisterWorkQueueWithMMCSS(
+        this WorkQueueId workQueueId,
+        IRtwqAsyncCallback doneCallback,
+        object? doneState
+    )
+    {
+        return RtwqBeginUnregisterWorkQueueWithMMCSS_(workQueueId, doneCallback, doneState);
+    }
+
+    [LibraryImport(Libraries.RTWorkQ, EntryPoint = "RtwqEndUnregisterWorkQueueWithMMCSS")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqEndUnregisterWorkQueueWithMMCSS(
-        [In] this IRtwqAsyncResult result
+    private static partial int RtwqEndUnregisterWorkQueueWithMMCSS_(
+        IRtwqAsyncResult result
     );
+
+    internal static int RtwqEndUnregisterWorkQueueWithMMCSS(
+        this IRtwqAsyncResult result
+    )
+    {
+        return RtwqEndUnregisterWorkQueueWithMMCSS_(result);
+    }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     internal readonly struct RtWorkItemKey
@@ -393,36 +436,52 @@ internal static partial class NativeMethods
         internal static RtWorkItemKey None => default;
     }
 
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    [LibraryImport(Libraries.RTWorkQ, EntryPoint = "RtwqPutWorkItem")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqPutWorkItem(
-        [In] this WorkQueueId dwQueue,
-        [In] AVRT_PRIORITY lPriority,
-        [In] IRtwqAsyncResult result
+    private static partial int RtwqPutWorkItem_(
+        WorkQueueId dwQueue,
+        AVRT_PRIORITY lPriority,
+        IRtwqAsyncResult result
     );
 
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    internal static int RtwqPutWorkItem(
+        this WorkQueueId dwQueue,
+        AVRT_PRIORITY lPriority,
+        IRtwqAsyncResult result
+    )
+    {
+        return RtwqPutWorkItem_(dwQueue, lPriority, result);
+    }
+
+    [LibraryImport(Libraries.RTWorkQ)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqPutWaitingWorkItem(
-        [In] SafeWaitHandle hEvent,
-        [In] AVRT_PRIORITY lPriority,
-        [In] IRtwqAsyncResult result,
-        [Out] out RtWorkItemKey Key
+    internal static partial int RtwqPutWaitingWorkItem(
+        SafeWaitHandle hEvent,
+        AVRT_PRIORITY lPriority,
+        IRtwqAsyncResult result,
+        out RtWorkItemKey Key
     );
 
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    [LibraryImport(Libraries.RTWorkQ)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqScheduleWorkItem(
-        [In] IRtwqAsyncResult result,
-        [In] long Timeout,
-        [Out] out RtWorkItemKey Key
+    internal static partial int RtwqScheduleWorkItem(
+        IRtwqAsyncResult result,
+        long Timeout,
+        out RtWorkItemKey Key
     );
 
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    [LibraryImport(Libraries.RTWorkQ, EntryPoint = "RtwqCancelWorkItem")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqCancelWorkItem(
-        [In] this RtWorkItemKey Key
+    private static partial int RtwqCancelWorkItem_(
+        RtWorkItemKey Key
     );
+
+    internal static int RtwqCancelWorkItem(
+        this RtWorkItemKey Key
+    )
+    {
+        return RtwqCancelWorkItem_(Key);
+    }
 
     internal sealed class DeadlineKey : SafeHandleZeroOrMinusOneIsInvalid
     {
@@ -473,7 +532,7 @@ internal static partial class NativeMethods
         return RtwqSetDeadline2_(workQueueId, deadlineInHNS, preDeadlineInHNS, out pRequest);
     }
 
-    [LibraryImport(Libraries.RTWorkQ)]
+    [LibraryImport(Libraries.RTWorkQ, EntryPoint = "RtwqCancelDeadline")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static partial int RtwqCancelDeadline(
         nint pRequest
@@ -492,18 +551,18 @@ internal static partial class NativeMethods
         }
     }
 
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    [LibraryImport(Libraries.RTWorkQ)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqAddPeriodicCallback(
-        [In] nint /*RTWQPERIODICCALLBACK*/ Callback,
-        [In][MarshalAs(UnmanagedType.IUnknown)] object /*IUnknown* */ context,
-        [Out] out PeriodicCallbackKey key
+    internal static partial int RtwqAddPeriodicCallback(
+        nint /*RTWQPERIODICCALLBACK*/ Callback,
+        [MarshalAs(UnmanagedType.Interface)] object /*IUnknown* */ context,
+        out PeriodicCallbackKey key
     );
 
-    [DllImport(Libraries.RTWorkQ, CallingConvention = CallingConvention.Winapi, PreserveSig = true)]
+    [LibraryImport(Libraries.RTWorkQ)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int RtwqRemovePeriodicCallback(
-        [In] nint dwKey
+    internal static partial int RtwqRemovePeriodicCallback(
+        nint dwKey
     );
 
     internal delegate void RtwqPeriodicCallback(

@@ -30,7 +30,7 @@ public class ElapsedTimeCounter
         _startTimestamp = Stopwatch.GetTimestamp();
     }
 
-    public static readonly double TickFrequency = (double)10_000_000 / Stopwatch.Frequency;
+    public static readonly double TickFrequency = (double)TimeSpan.TicksPerSecond / Stopwatch.Frequency;
 
     public static long TimestampToTicks(long timestamp)
     {

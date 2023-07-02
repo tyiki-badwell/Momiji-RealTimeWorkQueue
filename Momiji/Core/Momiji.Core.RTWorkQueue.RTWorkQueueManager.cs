@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -10,7 +11,7 @@ using RTWorkQ = Momiji.Interop.RTWorkQ.NativeMethods;
 namespace Momiji.Core.RTWorkQueue;
 
 [SupportedOSPlatform("windows")]
-public class RTWorkQueuePlatformEventsHandler : IRTWorkQueuePlatformEventsHandler
+public partial class RTWorkQueuePlatformEventsHandler : IRTWorkQueuePlatformEventsHandler
 {
     private readonly ILogger<RTWorkQueuePlatformEventsHandler> _logger;
     private bool _disposed;
@@ -19,7 +20,8 @@ public class RTWorkQueuePlatformEventsHandler : IRTWorkQueuePlatformEventsHandle
 
     //TODO これに連動して行うべき動作があるか？
     [ClassInterface(ClassInterfaceType.None)]
-    private class RtwqPlatformEvents : RTWorkQ.IRtwqPlatformEvents
+    [GeneratedComClass]
+    private partial class RtwqPlatformEvents : RTWorkQ.IRtwqPlatformEvents
     {
         private readonly ILogger<RtwqPlatformEvents> _logger;
         public RtwqPlatformEvents(
@@ -535,7 +537,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     {
         var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
 
-        var afterAction_ = (Exception? error, CancellationToken ct) =>
+        void afterAction_(Exception? error, CancellationToken ct)
         {
             if (error != null)
             {
@@ -552,7 +554,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
                 _logger.LogTrace("SetResult");
                 tcs.SetResult();
             }
-        };
+        }
 
         action(afterAction_);
 
@@ -560,14 +562,34 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     }
 
     public void ScheduleWorkItem(
-    long timeout,
-        Delegate action,
-        object? state = default,
+        long timeout,
+        Action action,
+        Action<Exception?, CancellationToken>? afterAction = default,
+        CancellationToken ct = default
+    )
+    {
+        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, null, afterAction);
+        ScheduleWorkItemCore(timeout, asyncResult, ct);
+    }
+
+    public void ScheduleWorkItem<TState>(
+        long timeout,
+        Action<TState?> action,
+        TState? state = default,
         Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     )
     {
         var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, state, afterAction);
+        ScheduleWorkItemCore(timeout, asyncResult, ct);
+    }
+
+    private void ScheduleWorkItemCore(
+        long timeout,
+        RTWorkQueueAsyncResultPoolValue asyncResult,
+        CancellationToken ct
+    )
+    {
         try
         {
             _logger.LogTrace($"RtwqScheduleWorkItem {asyncResult.Id}.");
@@ -589,8 +611,19 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
     public Task ScheduleWorkItemAsync(
         long timeout,
-        Delegate action,
-        object? state = default,
+        Action action,
+        CancellationToken ct = default
+    )
+    {
+        return ToAsync(
+            afterAction_ => ScheduleWorkItem(timeout, action, afterAction_, ct)
+        );
+    }
+
+    public Task ScheduleWorkItemAsync<TState>(
+        long timeout,
+        Action<TState?> action,
+        TState? state = default,
         CancellationToken ct = default
     )
     {

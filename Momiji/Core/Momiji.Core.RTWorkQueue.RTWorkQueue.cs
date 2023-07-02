@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
 using Momiji.Core.Threading;
@@ -8,7 +9,7 @@ using RTWorkQ = Momiji.Interop.RTWorkQ.NativeMethods;
 namespace Momiji.Core.RTWorkQueue;
 
 [SupportedOSPlatform("windows")]
-internal class RTWorkQueue : IRTWorkQueue
+internal partial class RTWorkQueue : IRTWorkQueue
 {
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<RTWorkQueue> _logger;
@@ -17,7 +18,12 @@ internal class RTWorkQueue : IRTWorkQueue
     internal ApartmentType CreatedApartmentType { get; init; }
 
     private readonly RTWorkQueueManager _parent;
-    private readonly RTWorkQ.WorkQueueId _workQueueid;
+    //private readonly RTWorkQ.WorkQueueId _workQueueid;
+
+    internal RTWorkQ.WorkQueueId WorkQueueId
+    {
+        get; init;
+    }
 
     private readonly int _taskId;
 
@@ -57,11 +63,12 @@ internal class RTWorkQueue : IRTWorkQueue
                 usageClass,
                 (RTWorkQ.AVRT_PRIORITY)basePriority,
                 ref putTaskId,
-                out _workQueueid
+                out var workQueueId
             ));
 
             _taskId = putTaskId;
-            _logger.LogDebug($"RTWorkQueue(shared) Class:{usageClass} Priority:{basePriority} TaskId:{_taskId:X} QueueId:{_workQueueid.Id:X}");
+            WorkQueueId = workQueueId;
+            _logger.LogDebug($"RTWorkQueue(shared) Class:{usageClass} Priority:{basePriority} TaskId:{_taskId:X} QueueId:{workQueueId.Id:X}");
         }
         else
         {
@@ -71,9 +78,10 @@ internal class RTWorkQueue : IRTWorkQueue
                 usageClass,
                 0,
                 nint.Zero,
-                out _workQueueid
+                out var workQueueId
             ));
-            _logger.LogDebug($"RTWorkQueue(shared) Class:'' Priority:0 TaskId:null QueueId:{_workQueueid.Id:X}");
+            WorkQueueId = workQueueId;
+            _logger.LogDebug($"RTWorkQueue(shared) Class:'' Priority:0 TaskId:null QueueId:{workQueueId.Id:X}");
         }
     }
 
@@ -89,10 +97,10 @@ internal class RTWorkQueue : IRTWorkQueue
         _logger.LogTrace($"RtwqAllocateWorkQueue type:{type}");
         Marshal.ThrowExceptionForHR(RTWorkQ.RtwqAllocateWorkQueue(
             (RTWorkQ.RTWQ_WORKQUEUE_TYPE)type,
-            out _workQueueid
+            out var workQueueId
         ));
-
-        _logger.LogDebug($"RTWorkQueue(private) type:{type} QueueId:{_workQueueid.Id:X}");
+        WorkQueueId = workQueueId;
+        _logger.LogDebug($"RTWorkQueue(private) type:{type} QueueId:{workQueueId.Id:X}");
     }
 
     internal RTWorkQueue(
@@ -104,13 +112,13 @@ internal class RTWorkQueue : IRTWorkQueue
         _logger.LogTrace($"create RTWorkQueue(serial) {CreatedApartmentType}");
 
         //Lock +1
-        _logger.LogTrace($"RtwqAllocateSerialWorkQueue parent.QueueId:{workQueue._workQueueid.Id:X}");
+        _logger.LogTrace($"RtwqAllocateSerialWorkQueue parent.QueueId:{workQueue.WorkQueueId.Id:X}");
         Marshal.ThrowExceptionForHR(RTWorkQ.RtwqAllocateSerialWorkQueue(
-            workQueue._workQueueid,
-            out _workQueueid
+            workQueue.WorkQueueId,
+            out var workQueueId
         ));
-
-        _logger.LogDebug($"RTWorkQueue(serial) QueueId:{_workQueueid.Id:X}");
+        WorkQueueId = workQueueId;
+        _logger.LogDebug($"RTWorkQueue(serial) QueueId:{workQueueId.Id:X}");
     }
 
     ~RTWorkQueue()
@@ -144,11 +152,11 @@ internal class RTWorkQueue : IRTWorkQueue
 
         CancelDeadline();
 
-        if (_workQueueid.Id != default)
+        if (WorkQueueId.Id != default)
         {
             try
             {
-                Marshal.ThrowExceptionForHR(_workQueueid.RtwqUnlockWorkQueue());
+                Marshal.ThrowExceptionForHR(WorkQueueId.RtwqUnlockWorkQueue());
             }
             catch (Exception e)
             {
@@ -229,7 +237,7 @@ internal class RTWorkQueue : IRTWorkQueue
         ApartmentType.CheckNeedMTA();
 
         _logger.LogTrace("RtwqLockWorkQueue");
-        Marshal.ThrowExceptionForHR(_workQueueid.RtwqLockWorkQueue());
+        Marshal.ThrowExceptionForHR(WorkQueueId.RtwqLockWorkQueue());
 
         return new LockToken(this, _loggerFactory);
     }
@@ -240,7 +248,7 @@ internal class RTWorkQueue : IRTWorkQueue
         ApartmentType.CheckNeedMTA();
 
         _logger.LogTrace("RtwqUnlockWorkQueue");
-        Marshal.ThrowExceptionForHR(_workQueueid.RtwqUnlockWorkQueue());
+        Marshal.ThrowExceptionForHR(WorkQueueId.RtwqUnlockWorkQueue());
     }
 
     public SafeHandle Join(
@@ -251,7 +259,7 @@ internal class RTWorkQueue : IRTWorkQueue
         ApartmentType.CheckNeedMTA();
 
         _logger.LogTrace("RtwqJoinWorkQueue");
-        Marshal.ThrowExceptionForHR(_workQueueid.RtwqJoinWorkQueue(handle, out var cookie));
+        Marshal.ThrowExceptionForHR(WorkQueueId.RtwqJoinWorkQueue(handle, out var cookie));
         return cookie;
     }
 
@@ -265,12 +273,12 @@ internal class RTWorkQueue : IRTWorkQueue
         if (preDeadlineInHNS == 0)
         {
             _logger.LogTrace("RtwqSetDeadline");
-            Marshal.ThrowExceptionForHR(_workQueueid.RtwqSetDeadline(deadlineInHNS, out _deadlineKey));
+            Marshal.ThrowExceptionForHR(WorkQueueId.RtwqSetDeadline(deadlineInHNS, out _deadlineKey));
         }
         else
         {
             _logger.LogTrace("RtwqSetDeadline2");
-            Marshal.ThrowExceptionForHR(_workQueueid.RtwqSetDeadline2(deadlineInHNS, preDeadlineInHNS, out _deadlineKey));
+            Marshal.ThrowExceptionForHR(WorkQueueId.RtwqSetDeadline2(deadlineInHNS, preDeadlineInHNS, out _deadlineKey));
         }
     }
 
@@ -289,7 +297,7 @@ internal class RTWorkQueue : IRTWorkQueue
         //STAからの呼び出しはサポート外にする
         ApartmentType.CheckNeedMTA();
 
-        Marshal.ThrowExceptionForHR(_workQueueid.RtwqGetWorkQueueMMCSSTaskId(out var taskId));
+        Marshal.ThrowExceptionForHR(WorkQueueId.RtwqGetWorkQueueMMCSSTaskId(out var taskId));
         return taskId;
     }
     public IRTWorkQueue.TaskPriority GetMMCSSPriority()
@@ -297,7 +305,7 @@ internal class RTWorkQueue : IRTWorkQueue
         //STAからの呼び出しはサポート外にする
         ApartmentType.CheckNeedMTA();
 
-        Marshal.ThrowExceptionForHR(_workQueueid.RtwqGetWorkQueueMMCSSPriority(out var priority));
+        Marshal.ThrowExceptionForHR(WorkQueueId.RtwqGetWorkQueueMMCSSPriority(out var priority));
         return (IRTWorkQueue.TaskPriority)priority;
     }
 
@@ -311,7 +319,7 @@ internal class RTWorkQueue : IRTWorkQueue
         {
             Span<char> text = stackalloc char[length];
 
-            var result = _workQueueid.RtwqGetWorkQueueMMCSSClass(text, ref length);
+            var result = WorkQueueId.RtwqGetWorkQueueMMCSSClass(text, ref length);
             if (result != unchecked((int)0xC00D36B1)) //E_BUFFERTOOSMALL
             {
                 var e = Marshal.GetExceptionForHR(result);
@@ -333,7 +341,7 @@ internal class RTWorkQueue : IRTWorkQueue
         {
             Span<char> text = stackalloc char[length];
 
-            var result = _workQueueid.RtwqGetWorkQueueMMCSSClass(text, ref length);
+            var result = WorkQueueId.RtwqGetWorkQueueMMCSSClass(text, ref length);
             {
                 var e = Marshal.GetExceptionForHR(result);
                 if (e != null)
@@ -348,7 +356,8 @@ internal class RTWorkQueue : IRTWorkQueue
     }
 
     [ClassInterface(ClassInterfaceType.None)]
-    private class RegisterMMCSSAsyncCallback : RTWorkQ.IRtwqAsyncCallback
+    [GeneratedComClass]
+    private partial class RegisterMMCSSAsyncCallback : RTWorkQ.IRtwqAsyncCallback
     {
         public int GetParameters(ref uint pdwFlags, ref RTWorkQ.WorkQueueId pdwQueue) {
             return unchecked((int)0x80004001); //E_NOTIMPL
@@ -381,7 +390,7 @@ internal class RTWorkQueue : IRTWorkQueue
 
         _logger.LogTrace($"RtwqBeginRegisterWorkQueueWithMMCSS usageClass:{usageClass} taskId:{taskId:X} basePriority:{basePriority}");
 
-        Marshal.ThrowExceptionForHR(_workQueueid.RtwqBeginRegisterWorkQueueWithMMCSS(
+        Marshal.ThrowExceptionForHR(WorkQueueId.RtwqBeginRegisterWorkQueueWithMMCSS(
             usageClass,
             taskId,
             (RTWorkQ.AVRT_PRIORITY)basePriority,
@@ -418,7 +427,7 @@ internal class RTWorkQueue : IRTWorkQueue
 
         _logger.LogTrace("RtwqBeginUnregisterWorkQueueWithMMCSS");
 
-        Marshal.ThrowExceptionForHR(_workQueueid.RtwqBeginUnregisterWorkQueueWithMMCSS(
+        Marshal.ThrowExceptionForHR(WorkQueueId.RtwqBeginUnregisterWorkQueueWithMMCSS(
             callback,
             (RTWorkQ.IRtwqAsyncResult result) => {
                 try
@@ -447,7 +456,7 @@ internal class RTWorkQueue : IRTWorkQueue
 
         CheckShutdown();
 
-        Marshal.ThrowExceptionForHR(_workQueueid.RtwqSetLongRunning(enable));
+        Marshal.ThrowExceptionForHR(WorkQueueId.RtwqSetLongRunning(enable));
     }
 
     public void PutWorkItem(
@@ -463,7 +472,7 @@ internal class RTWorkQueue : IRTWorkQueue
 
         CheckShutdown();
 
-        var asyncResult = _parent.GetAsyncResult(0, _workQueueid, action, null, afterAction);
+        var asyncResult = _parent.GetAsyncResult(0, WorkQueueId, action, null, afterAction);
         PutWorkItemCore(priority, asyncResult, ct);
     }
 
@@ -481,7 +490,7 @@ internal class RTWorkQueue : IRTWorkQueue
 
         CheckShutdown();
 
-        var asyncResult = _parent.GetAsyncResult(0, _workQueueid, action, state, afterAction);
+        var asyncResult = _parent.GetAsyncResult(0, WorkQueueId, action, state, afterAction);
         PutWorkItemCore(priority, asyncResult, ct);
     }
 
@@ -497,7 +506,7 @@ internal class RTWorkQueue : IRTWorkQueue
             asyncResult.WaitingToRun();
             asyncResult.BindCancellationToken(RTWorkQ.RtWorkItemKey.None, ct);
 
-            Marshal.ThrowExceptionForHR(_workQueueid.RtwqPutWorkItem(
+            Marshal.ThrowExceptionForHR(WorkQueueId.RtwqPutWorkItem(
                 (RTWorkQ.AVRT_PRIORITY)priority,
                 asyncResult.RtwqAsyncResult
             ));

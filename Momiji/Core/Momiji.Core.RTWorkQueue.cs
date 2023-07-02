@@ -35,6 +35,66 @@ public interface IRTWorkQueueManager : IDisposable
     public IRTWorkQueue CreateSerialWorkQueue(
         IRTWorkQueue workQueue
     );
+
+    public void PutWaitingWorkItem(
+        IRTWorkQueue.TaskPriority priority,
+        WaitHandle waitHandle,
+        Action action,
+        Action<Exception?, CancellationToken>? afterAction = default,
+        CancellationToken ct = default
+    );
+
+    public void PutWaitingWorkItem<TState>(
+        IRTWorkQueue.TaskPriority priority,
+        WaitHandle waitHandle,
+        Action<TState?> action,
+        TState? state,
+        Action<Exception?, CancellationToken>? afterAction = default,
+        CancellationToken ct = default
+    );
+
+    public Task PutWaitingWorkItemAsync(
+        IRTWorkQueue.TaskPriority priority,
+        WaitHandle waitHandle,
+        Action action,
+        CancellationToken ct = default
+    );
+
+    public void ScheduleWorkItem(
+        long timeout,
+        Action action,
+        Action<Exception?, CancellationToken>? afterAction = default,
+        CancellationToken ct = default
+    );
+
+    public void ScheduleWorkItem<TState>(
+        long timeout,
+        Action<TState?> action,
+        TState? state = default,
+        Action<Exception?, CancellationToken>? afterAction = default,
+        CancellationToken ct = default
+    );
+
+    public Task PutWaitingWorkItemAsync<TState>(
+        IRTWorkQueue.TaskPriority priority,
+        WaitHandle waitHandle,
+        Action<TState?> action,
+        TState? state = default,
+        CancellationToken ct = default
+    );
+
+    public Task ScheduleWorkItemAsync(
+        long timeout,
+        Action action,
+        CancellationToken ct = default
+    );
+
+    public Task ScheduleWorkItemAsync<TState>(
+        long timeout,
+        Action<TState?> action,
+        TState? state = default,
+        CancellationToken ct = default
+    );
 }
 
 public interface IRTWorkQueue : IDisposable

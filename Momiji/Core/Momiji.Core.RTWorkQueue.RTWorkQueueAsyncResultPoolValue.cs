@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using Microsoft.Extensions.Logging;
 using Momiji.Core.Cache;
 using Momiji.Core.Threading;
@@ -7,7 +8,7 @@ using RTWorkQ = Momiji.Interop.RTWorkQ.NativeMethods;
 
 namespace Momiji.Core.RTWorkQueue;
 
-internal class RTWorkQueueAsyncResultPoolValue : PoolValue
+internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue
 {
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<RTWorkQueueAsyncResultPoolValue> _logger;
@@ -32,7 +33,8 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
     private Action<Exception?, CancellationToken>? _afterAction;
 
     [ClassInterface(ClassInterfaceType.None)]
-    private class RtwqAsyncCallbackImpl : RTWorkQ.IRtwqAsyncCallback
+    [GeneratedComClass]
+    private partial class RtwqAsyncCallbackImpl : RTWorkQ.IRtwqAsyncCallback
     {
         private readonly RTWorkQueueAsyncResultPoolValue _parent;
         public RtwqAsyncCallbackImpl(
@@ -105,11 +107,13 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
 
             if (_rtwqAsyncResult != null)
             {
+                /*
                 //STAから呼ばれたときはMTAに移動して解放する
                 MTAExecuter.Invoke(_logger, () => {
                     var count = Marshal.FinalReleaseComObject(_rtwqAsyncResult);
                     _logger.LogTrace($"FinalReleaseComObject {count} {Id}");
                 });
+                */
             }
 
             _disposed = true;

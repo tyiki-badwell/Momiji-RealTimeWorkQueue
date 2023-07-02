@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Momiji.Core.Timer;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Momiji.Core.RTWorkQueue;
 
@@ -15,12 +16,17 @@ public class RTWorkQueueTest : IDisposable
     private const int WAIT = 10;
 
     private readonly ILoggerFactory _loggerFactory;
-    private readonly ILogger<RTWorkQueueTest> _logger;
     private readonly RTWorkQueuePlatformEventsHandler _workQueuePlatformEventsHandler;
     private readonly RTWorkQueueManager _workQueueManager;
 
-    public RTWorkQueueTest()
+    private readonly ITestOutputHelper _output;
+    
+    public RTWorkQueueTest(
+        ITestOutputHelper output
+    )
     {
+        _output = output;
+
         var configuration = CreateConfiguration(/*usageClass, 0, taskId*/);
 
         _loggerFactory = LoggerFactory.Create(builder =>
@@ -36,7 +42,6 @@ public class RTWorkQueueTest : IDisposable
             builder.AddConsole();
             builder.AddDebug();
         });
-        _logger = _loggerFactory.CreateLogger<RTWorkQueueTest>();
 
         _workQueuePlatformEventsHandler = new(_loggerFactory);
         _workQueueManager = new(configuration, _loggerFactory);
@@ -103,12 +108,12 @@ public class RTWorkQueueTest : IDisposable
     {
         {
             var (tag, time) = list.ToList()[^1];
-            _logger.LogInformation($"LAST: {tag}\t{(double)time / 10000}");
+            _output.WriteLine($"LAST: {tag}\t{(double)time / 10000}");
         }
 
         foreach (var (tag, time) in list)
         {
-            _logger.LogInformation($"{tag}\t{(double)time / 10000}");
+            _output.WriteLine($"{tag}\t{(double)time / 10000}");
         }
     }
 
@@ -193,12 +198,12 @@ public class RTWorkQueueTest : IDisposable
             listener.Listen(100);
 
             using var cookie = workQueue.Join(listener.SafeHandle);
-            _logger.LogInformation("server join");
+            _output.WriteLine("server join");
 
             //TODO joinした後にasync版を呼び出すとエラーになる
             //var handler = await listener.AcceptAsync();
             var handler = listener.Accept();
-            _logger.LogInformation("accept");
+            _output.WriteLine("accept");
 
             while(true)
             {
@@ -209,14 +214,14 @@ public class RTWorkQueueTest : IDisposable
                     break;
                 }
                 var s = System.Text.Encoding.ASCII.GetString(buffer);
-                _logger.LogInformation($"receive [{s}]");
+                _output.WriteLine($"receive [{s}]");
             }
 
             await Task.Delay(5000);
         });
 
         var client = Task.Run(async () => {
-            _logger.LogInformation("run client");
+            _output.WriteLine("run client");
 
             using var client = 
                 new Socket(
@@ -227,12 +232,12 @@ public class RTWorkQueueTest : IDisposable
             await Task.Delay(100);
 
             using var cookie = workQueue.Join(client.SafeHandle);
-            _logger.LogInformation("client join");
+            _output.WriteLine("client join");
 
             //TODO joinした後にasync版を呼び出すとエラーになる
             //await client.ConnectAsync(ipEndPoint);
             client.Connect(ipEndPoint);
-            _logger.LogInformation("connect");
+            _output.WriteLine("connect");
 
             var options = new ParallelOptions
             {
@@ -243,7 +248,7 @@ public class RTWorkQueueTest : IDisposable
                 var text = "1234567890:" + index.ToString();
                 var buffer = System.Text.Encoding.ASCII.GetBytes(text + "\n");
                 client.Send(buffer);
-                _logger.LogInformation($"send [{text}]");
+                _output.WriteLine($"send [{text}]");
             });
 
             await Task.Delay(1000);
@@ -257,12 +262,14 @@ public class RTWorkQueueTest : IDisposable
     public async Task TestRtwqSetDeadline()
     {
         using var workQueue = _workQueueManager.CreatePlatformWorkQueue();
+        workQueue.SetDeadline(1_000_0); // 1msec
 
-        //TODO 何のためのもの？？？　1usec以内に開始・終了しなくても、何もエラーなどは発生しない
-        workQueue.SetDeadline(1_0); // 1usec
+        //Deadlineが短いQueueの方が優先され気味になる様子
+        using var workQueue2 = _workQueueManager.CreatePlatformWorkQueue();
+        workQueue2.SetDeadline(1_0); // 1usec
 
         var list = new ConcurrentQueue<(string, long)>();
-        var taskMap = new Dictionary<Task, int>();
+        var taskMap = new ConcurrentDictionary<Task, int>();
         var counter = new ElapsedTimeCounter();
         counter.Reset();
 
@@ -271,7 +278,22 @@ public class RTWorkQueueTest : IDisposable
             {
                 var j = i;
                 list.Enqueue(($"action put {j}", counter.ElapsedTicks));
-                taskMap.Add(workQueue.PutWorkItemAsync(
+                taskMap.TryAdd(workQueue.PutWorkItemAsync(
+                    IRTWorkQueue.TaskPriority.NORMAL,
+                    () =>
+                    {
+                        TestTask(counter, list, j);
+                    }
+                ), j);
+            }
+        });
+
+        var putTask2 = Task.Run(() => {
+            for (var i = 1; i <= TIMES; i++)
+            {
+                var j = i + TIMES;
+                list.Enqueue(($"action put {j}", counter.ElapsedTicks));
+                taskMap.TryAdd(workQueue2.PutWorkItemAsync(
                     IRTWorkQueue.TaskPriority.NORMAL,
                     () =>
                     {
@@ -282,6 +304,7 @@ public class RTWorkQueueTest : IDisposable
         });
 
         await putTask;
+        await putTask2;
 
         //終了待ち
         while (taskMap.Count > 0)
@@ -289,7 +312,7 @@ public class RTWorkQueueTest : IDisposable
             var task = await Task.WhenAny(taskMap.Keys).ConfigureAwait(false);
             taskMap.Remove(task, out var id);
 
-            _logger.LogDebug(($"task {id} IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
+            _output.WriteLine(($"task {id} IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
         }
 
         PrintResult(list);
@@ -346,7 +369,7 @@ public class RTWorkQueueTest : IDisposable
             var task = await Task.WhenAny(taskMap.Keys).ConfigureAwait(false);
             taskMap.Remove(task, out var id);
 
-            _logger.LogDebug(($"task {id} IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
+            _output.WriteLine(($"task {id} IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
         }
 
         PrintResult(list);
@@ -482,17 +505,17 @@ public class RTWorkQueueTest : IDisposable
 
             {
                 //１回目の起動が遅いので、空打ちする
-                _logger.LogInformation("dummy action start.");
+                _output.WriteLine("dummy action start.");
                 var task = workQueue.PutWorkItemAsync(
                     IRTWorkQueue.TaskPriority.NORMAL,
                     () =>
                     {
-                        _logger.LogInformation("dummy invoke.");
+                        _output.WriteLine("dummy invoke.");
                     }
                 );
                 await task;
 
-                _logger.LogInformation($"dummy action end task IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}");
+                _output.WriteLine($"dummy action end task IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}");
             }
 
             using var cde = new CountdownEvent(TIMES);
@@ -522,7 +545,7 @@ public class RTWorkQueueTest : IDisposable
                 var task = await Task.WhenAny(taskSet).ConfigureAwait(false);
                 taskSet.Remove(task);
 
-                _logger.LogDebug(($"task IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
+                _output.WriteLine(($"task IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
             }
 
             PrintResult(list);
@@ -670,19 +693,19 @@ public class RTWorkQueueTest : IDisposable
 
             {
                 //１回目の起動が遅いので、空打ちする
-                _logger.LogInformation("dummy action start.");
+                _output.WriteLine("dummy action start.");
                 workQueue.PutWorkItem(
                     IRTWorkQueue.TaskPriority.NORMAL,
                     () =>
                     {
-                        _logger.LogInformation("dummy invoke.");
+                        _output.WriteLine("dummy invoke.");
                     },
                     (error, ct) =>
                     {
-                        _logger.LogInformation($"dummy result error [{error}] ct [{ct.IsCancellationRequested}].");
+                        _output.WriteLine($"dummy result error [{error}] ct [{ct.IsCancellationRequested}].");
                     }
                 );
-                _logger.LogInformation("dummy action end.");
+                _output.WriteLine("dummy action end.");
             }
 
             using var cde = new CountdownEvent(TIMES);
@@ -811,19 +834,21 @@ public class RTWorkQueueTest : IDisposable
         using var cde = new CountdownEvent(TIMES);
 
         using var timer = new WaitableTimer(false, true);
-        timer.Set(-100);
 
         using var cts = new CancellationTokenSource();
         using var wait = new ManualResetEventSlim();
 
-        list.Enqueue(($"action put", counter.ElapsedTicks));
+        var msec = 5;
+        var intervalTicks = (1_000 / 60) * TimeSpan.TicksPerMillisecond;
+        var progressed = 0L;
+        var progressedTicks = counter.ElapsedTicks;
 
         var i = 0;
         while (true)
         {
             var j = i++;
 
-            list.Enqueue(($"action put {j}", counter.ElapsedTicks));
+            list.Enqueue(($"action put {j} {progressed}", counter.ElapsedTicks));
             _workQueueManager.PutWaitingWorkItem(
                 0,
                 timer,
@@ -844,10 +869,25 @@ public class RTWorkQueueTest : IDisposable
                 break;
             }
 
-            list.Enqueue(($"timer set {j}", counter.ElapsedTicks));
-            timer.Set(-100);
+            var nextTicks = intervalTicks * (progressed + 1);
+            var leftTicks = nextTicks - counter.ElapsedTicks;
+
+            if (leftTicks > 0)
+            {
+                list.Enqueue(($"timer set {j} left {leftTicks}", counter.ElapsedTicks));
+                timer.Set(msec * -1_000_0);
+            }
+            else
+            {
+                list.Enqueue(($"skip left {leftTicks}", counter.ElapsedTicks));
+                timer.Set(0);
+            }
+
             wait.Wait();
             wait.Reset();
+
+            progressedTicks = counter.ElapsedTicks;
+            progressed = progressedTicks / intervalTicks;
         }
 
         cts.Cancel();
@@ -881,7 +921,7 @@ public class RTWorkQueueTest : IDisposable
 
         if (alreadyCancel)
         {
-            _logger.LogInformation($"already cancel {counter.ElapsedTicks}");
+            _output.WriteLine($"already cancel {counter.ElapsedTicks}");
             cts.Cancel();
         }
 
@@ -895,7 +935,7 @@ public class RTWorkQueueTest : IDisposable
             0,
             waitHandle,
             () => {
-                _logger.LogInformation($"invoke {counter.ElapsedTicks}");
+                _output.WriteLine($"invoke {counter.ElapsedTicks}");
 
                 if (error)
                 {
@@ -916,14 +956,14 @@ public class RTWorkQueueTest : IDisposable
         if (cancel)
         {
             Task.Delay(100).Wait();
-            _logger.LogInformation($"cancel {counter.ElapsedTicks}");
+            _output.WriteLine($"cancel {counter.ElapsedTicks}");
             cts.Cancel();
         }
 
         if (fire)
         {
             Task.Delay(100).Wait();
-            _logger.LogInformation($"set {counter.ElapsedTicks}");
+            _output.WriteLine($"set {counter.ElapsedTicks}");
             waitHandle.Set();
         }
 
@@ -931,7 +971,7 @@ public class RTWorkQueueTest : IDisposable
 
         if (ct.IsCancellationRequested)
         {
-            _logger.LogInformation($"cancel");
+            _output.WriteLine($"cancel");
 
             if (!cancel && !alreadyCancel)
             {
@@ -940,7 +980,7 @@ public class RTWorkQueueTest : IDisposable
         }
         else if (exception != null)
         {
-            _logger.LogInformation(exception, $"error");
+            _output.WriteLine($"error {exception}");
 
             if (!error)
             {
@@ -949,7 +989,7 @@ public class RTWorkQueueTest : IDisposable
         }
         else
         {
-            _logger.LogInformation($"result {result} {counter.ElapsedTicks}");
+            _output.WriteLine($"result {result} {counter.ElapsedTicks}");
 
             if (fire)
             {
@@ -988,7 +1028,7 @@ public class RTWorkQueueTest : IDisposable
 
         if (alreadyCancel)
         {
-            _logger.LogInformation($"already cancel {counter.ElapsedTicks}");
+            _output.WriteLine($"already cancel {counter.ElapsedTicks}");
             cts.Cancel();
         }
 
@@ -997,7 +1037,7 @@ public class RTWorkQueueTest : IDisposable
             0, 
             waitHandle, 
             () => {
-                _logger.LogInformation($"invoke {counter.ElapsedTicks}");
+                _output.WriteLine($"invoke {counter.ElapsedTicks}");
 
                 if (error)
                 {
@@ -1012,14 +1052,14 @@ public class RTWorkQueueTest : IDisposable
         if (cancel)
         {
             await Task.Delay(100);
-            _logger.LogInformation($"cancel {counter.ElapsedTicks}");
+            _output.WriteLine($"cancel {counter.ElapsedTicks}");
             cts.Cancel();
         }
 
         if (fire)
         {
             await Task.Delay(100);
-            _logger.LogInformation($"set {counter.ElapsedTicks}");
+            _output.WriteLine($"set {counter.ElapsedTicks}");
             waitHandle.Set();
         }
 
@@ -1027,7 +1067,7 @@ public class RTWorkQueueTest : IDisposable
         {
             await task;
 
-            _logger.LogInformation($"result {result} {counter.ElapsedTicks}");
+            _output.WriteLine($"result {result} {counter.ElapsedTicks}");
 
             if (fire)
             {
@@ -1040,7 +1080,7 @@ public class RTWorkQueueTest : IDisposable
         }
         catch (TaskCanceledException e)
         {
-            _logger.LogInformation(e, $"cancel");
+            _output.WriteLine($"error {e}");
 
             if (!cancel && !alreadyCancel)
             {
@@ -1049,7 +1089,7 @@ public class RTWorkQueueTest : IDisposable
         }
         catch (Exception e)
         {
-            _logger.LogInformation(e, $"error");
+            _output.WriteLine($"error {e}");
 
             if (!error)
             {
@@ -1096,7 +1136,7 @@ public class RTWorkQueueTest : IDisposable
             var task = await Task.WhenAny(taskSet).ConfigureAwait(false);
             taskSet.Remove(task);
 
-            _logger.LogDebug(($"task IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
+            _output.WriteLine(($"task IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
         }
 
         PrintResult(list);
