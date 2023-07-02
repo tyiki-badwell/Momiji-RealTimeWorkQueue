@@ -61,11 +61,26 @@ public interface IRTWorkQueue : IDisposable
         CancellationToken ct = default
     );
 
-    public Task PutWorkItemAsync(
+    public void PutWorkItem<TState>(
         TaskPriority priority,
-        Action action,
+        Action<TState?> action,
+        TState? state,
+        Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     );
+
+    public Task PutWorkItemAsync(
+        TaskPriority priority,
+        Action action, 
+        CancellationToken ct = default
+    );
+    public Task PutWorkItemAsync<TState>(
+        TaskPriority priority,
+        Action<TState?> action,
+        TState? state,
+        CancellationToken ct = default
+    );
+
     public IDisposable Lock();
 
     public SafeHandle Join(

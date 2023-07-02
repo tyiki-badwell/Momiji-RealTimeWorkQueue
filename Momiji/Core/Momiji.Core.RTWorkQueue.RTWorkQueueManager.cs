@@ -259,7 +259,8 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     internal RTWorkQueueAsyncResultPoolValue GetAsyncResult(
         uint flags,
         RTWorkQ.WorkQueueId queue,
-        Action action,
+        Delegate action,
+        object? state = default,
         Action<Exception?, CancellationToken>? afterAction = default
     )
     {
@@ -267,7 +268,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
         var asyncResult = _pool.Get();
 
-        asyncResult.Initialize(flags, queue, action, afterAction);
+        asyncResult.Initialize(flags, queue, action, state, afterAction);
         return asyncResult;
     }
 
@@ -458,7 +459,30 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         CancellationToken ct = default
     )
     {
-        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, afterAction);
+        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, null, afterAction);
+        PutWaitingWorkItemCore(priority, waitHandle, asyncResult, ct);
+    }
+
+    public void PutWaitingWorkItem<TState>(
+        IRTWorkQueue.TaskPriority priority,
+        WaitHandle waitHandle,
+        Action<TState?> action,
+        TState? state,
+        Action<Exception?, CancellationToken>? afterAction = default,
+        CancellationToken ct = default
+    )
+    {
+        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, state, afterAction);
+        PutWaitingWorkItemCore(priority, waitHandle, asyncResult, ct);
+    }
+
+    private void PutWaitingWorkItemCore(
+        IRTWorkQueue.TaskPriority priority,
+        WaitHandle waitHandle,
+        RTWorkQueueAsyncResultPoolValue asyncResult,
+        CancellationToken ct
+    )
+    {
         try
         {
             _logger.LogTrace($"RtwqPutWaitingWorkItem {asyncResult.Id}.");
@@ -484,13 +508,24 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         IRTWorkQueue.TaskPriority priority,
         WaitHandle waitHandle,
         Action action,
-        CancellationToken ct
+        CancellationToken ct = default
     )
     {
         return ToAsync(
-            (afterAction_) => {
-                PutWaitingWorkItem(priority, waitHandle, action, afterAction_, ct);
-            }
+            afterAction_ => PutWaitingWorkItem(priority, waitHandle, action, afterAction_, ct)
+        );
+    }
+
+    public Task PutWaitingWorkItemAsync<TState>(
+        IRTWorkQueue.TaskPriority priority,
+        WaitHandle waitHandle,
+        Action<TState?> action,
+        TState? state = default,
+        CancellationToken ct = default
+    )
+    {
+        return ToAsync(
+            afterAction_ => PutWaitingWorkItem(priority, waitHandle, action, state, afterAction_, ct)
         );
     }
 
@@ -526,12 +561,13 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
     public void ScheduleWorkItem(
     long timeout,
-        Action action,
+        Delegate action,
+        object? state = default,
         Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     )
     {
-        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, afterAction);
+        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, state, afterAction);
         try
         {
             _logger.LogTrace($"RtwqScheduleWorkItem {asyncResult.Id}.");
@@ -553,14 +589,13 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
     public Task ScheduleWorkItemAsync(
         long timeout,
-        Action action,
-        CancellationToken ct
+        Delegate action,
+        object? state = default,
+        CancellationToken ct = default
     )
     {
         return ToAsync(
-            (afterAction_) => {
-                ScheduleWorkItem(timeout, action, afterAction_, ct);
-            }
+            afterAction_ => ScheduleWorkItem(timeout, action, state, afterAction_, ct)
         );
     }
 }

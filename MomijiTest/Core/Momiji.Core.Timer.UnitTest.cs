@@ -36,29 +36,12 @@ public class WaitableTimerTest
         }
     }
 
-    [Fact]
-    public void Test1_1()
-    {
-        Test1Impl(true, true);
-    }
-
-    [Fact]
-    public void Test1_2()
-    {
-        Test1Impl(true, false);
-    }
-    [Fact]
-    public void Test1_3()
-    {
-        Test1Impl(false, true);
-    }
-    [Fact]
-    public void Test1_4()
-    {
-        Test1Impl(false, false);
-    }
-
-    private static void Test1Impl(
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void Test1Impl(
         bool manualReset,
         bool highResolution
     )
@@ -95,7 +78,7 @@ public class WaiterTest
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Test1(bool highResolution)
+    public void TestWait(bool highResolution)
     {
         using var loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -146,7 +129,7 @@ public class WaiterTest
     }
 
     [Fact]
-    public async Task Test2Async()
+    public async Task TestPeriodicTimerAsync()
     {
         using var loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -190,7 +173,7 @@ public class WaiterTest
     }
 
     [Fact]
-    public async Task Test3Async()
+    public async Task TestRegisterWaitForSingleObjectAsync()
     {
         using var loggerFactory = LoggerFactory.Create(builder =>
         {

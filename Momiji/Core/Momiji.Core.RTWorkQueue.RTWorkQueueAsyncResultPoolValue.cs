@@ -23,7 +23,8 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
 
     private uint _flags;
     private RTWorkQ.WorkQueueId _workQueueId;
-    private Action? _action;
+    private Delegate? _action;
+    private object? _state;
     
     private RTWorkQ.RtWorkItemKey _key;
     private CancellationToken _ct;
@@ -119,7 +120,8 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
     internal void Initialize(
         uint flags,
         RTWorkQ.WorkQueueId queue,
-        Action action,
+        Delegate action,
+        object? state = null, 
         Action<Exception?, CancellationToken>? afterAction = default
     )
     {
@@ -131,6 +133,7 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
         _flags = flags;
         _workQueueId = queue;
         _action = action;
+        _state = state;
         _afterAction = afterAction;
     }
 
@@ -152,7 +155,7 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
             }
 
             _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType}");
-            _action?.Invoke();
+            InvokeAction();
             _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType} ok.");
             RanToCompletion();
 
@@ -186,8 +189,25 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
         }
     }
 
+    private void InvokeAction()
+    {
+        {
+            if (_action is Action action)
+            {
+                action.Invoke();
+            }
+        }
+        {
+            if (_action is Action<object?> action)
+            {
+                action.Invoke(_state);
+            }
+        }
+    }
+
     protected override void CancelCore(bool ignore)
     {
+        //TODO InvokeCoreとCancelCoreが同時に動いても問題ないようにする必要アリ？
         var apartmentType = ApartmentType.GetApartmentType();
 
         _logger.LogTrace($"RtwqAsyncCallback.Cancel Id:{Id} {CreatedApartmentType} {Status} / {apartmentType}");

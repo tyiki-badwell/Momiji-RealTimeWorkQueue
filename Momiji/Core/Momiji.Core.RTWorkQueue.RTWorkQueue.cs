@@ -463,8 +463,34 @@ internal class RTWorkQueue : IRTWorkQueue
 
         CheckShutdown();
 
-        var asyncResult = _parent.GetAsyncResult(0, _workQueueid, action, afterAction);
+        var asyncResult = _parent.GetAsyncResult(0, _workQueueid, action, null, afterAction);
+        PutWorkItemCore(priority, asyncResult, ct);
+    }
 
+    public void PutWorkItem<TState>(
+        IRTWorkQueue.TaskPriority priority,
+        Action<TState?> action,
+        TState? state,
+        Action<Exception?, CancellationToken>? afterAction = default,
+        CancellationToken ct = default
+    )
+    {
+        //QueueとAsyncResultを作ったApartmentTypeが一致している必要がある
+        //STAからの呼び出しはサポート外にする
+        ApartmentType.CheckNeedMTA();
+
+        CheckShutdown();
+
+        var asyncResult = _parent.GetAsyncResult(0, _workQueueid, action, state, afterAction);
+        PutWorkItemCore(priority, asyncResult, ct);
+    }
+
+    private void PutWorkItemCore(
+        IRTWorkQueue.TaskPriority priority,
+        RTWorkQueueAsyncResultPoolValue asyncResult,
+        CancellationToken ct
+    )
+    {
         try
         {
             _logger.LogTrace($"PutWorkItem Id:{asyncResult.Id} {asyncResult.CreatedApartmentType}");
@@ -490,9 +516,19 @@ internal class RTWorkQueue : IRTWorkQueue
     )
     {
         return _parent.ToAsync(
-            (afterAction_) => {
-                PutWorkItem(priority, action, afterAction_, ct);
-            }
+            afterAction_ => PutWorkItem(priority, action, afterAction_, ct)
+        );
+    }
+
+    public Task PutWorkItemAsync<TState>(
+        IRTWorkQueue.TaskPriority priority,
+        Action<TState?> action, 
+        TState? state,
+        CancellationToken ct = default
+    )
+    {
+        return _parent.ToAsync(
+            afterAction_ => PutWorkItem(priority, action, state, afterAction_, ct)
         );
     }
 }
