@@ -1,7 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Momiji.Core.Threading;
 
 namespace Momiji.Core.RTWorkQueue.Tasks;
 public class RTWorkQueueTaskSchedulerManagerException : Exception
@@ -228,9 +227,7 @@ internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable
             {
                 if (workQueueManager == null)
                 {
-                    workQueueManager = MTAExecuter.Invoke(_logger, () => { 
-                        return new RTWorkQueueManager(_configuration, _loggerFactory);
-                    });
+                    workQueueManager = new RTWorkQueueManager(_configuration, _loggerFactory);
 
                     workQueues.workQueueManager = workQueueManager;
                 }
@@ -264,15 +261,11 @@ internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable
                 {
                     if (_key.Type != null)
                     {
-                        workQueue = MTAExecuter.Invoke(_logger, () => {
-                            return workQueueManager.CreatePrivateWorkQueue((IRTWorkQueue.WorkQueueType)_key.Type);
-                        });
+                        workQueue = workQueueManager.CreatePrivateWorkQueue((IRTWorkQueue.WorkQueueType)_key.Type);
                     }
                     else
                     {
-                        workQueue = MTAExecuter.Invoke(_logger, () => {
-                            return workQueueManager.CreatePlatformWorkQueue(_key.UsageClass, _key.BasePriority, _key.TaskId);
-                        });
+                        workQueue = workQueueManager.CreatePlatformWorkQueue(_key.UsageClass, _key.BasePriority, _key.TaskId);
                     }
 
                     //TODO serial
@@ -300,15 +293,12 @@ internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable
 
         var workQueue = GetWorkQueue(((task.CreationOptions & TaskCreationOptions.LongRunning) != 0));
 
-        //TODO IContextCallbackのキャプチャは要る？
-        MTAExecuter.Invoke(_logger, () => {
-            workQueue.PutWorkItem(
-                IRTWorkQueue.TaskPriority.NORMAL,
-                () => {
-                    TryExecuteTask(task);
-                }
-            );
-        });
+        workQueue.PutWorkItem(
+            IRTWorkQueue.TaskPriority.NORMAL,
+            () => {
+                TryExecuteTask(task);
+            }
+        );
     }
 
     protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued) {

@@ -1014,7 +1014,7 @@ public class RTWorkQueueTest : IDisposable
         bool cancel,
         bool alreadyCancel,
         bool error
-        )
+    )
     {
         _workQueueManager.RegisterMMCSS(usageClass);
 
@@ -1099,47 +1099,92 @@ public class RTWorkQueueTest : IDisposable
     }
 
     [Theory]
-    [InlineData("Pro Audio")]
-    public async Task TestRtwqScheduleAsync(string usageClass)
+    [InlineData("Pro Audio", 0, false, false, false)] //Fire
+    [InlineData("Pro Audio", -1, false, false, false)] //Fire
+    [InlineData("Pro Audio", -100, true, false, false)] //Cancel
+    [InlineData("Pro Audio", -100, false, true, false)] //Already_Cancel
+    [InlineData("Pro Audio", -1, false, false, true)] //Fire_Error
+    public async Task TestRtwqScheduleAsync(
+        string usageClass,
+        long timeout,
+        bool cancel,
+        bool alreadyCancel,
+        bool error
+    )
     {
         _workQueueManager.RegisterMMCSS(usageClass);
-
-        var list = new ConcurrentQueue<(string, long)>();
-        var taskSet = new HashSet<Task>();
 
         var counter = new ElapsedTimeCounter();
         counter.Reset();
 
         using var cts = new CancellationTokenSource();
 
+        if (alreadyCancel)
+        {
+            _output.WriteLine($"already cancel {counter.ElapsedTicks}");
+            cts.Cancel();
+        }
+
         //誤差 5msecくらい　20msec以下には出来ない模様
-        for (var i = 1; i <= TIMES; i++)
+
+        var result = 0;
+
+        _output.WriteLine($"put {counter.ElapsedTicks}");
+
+        var task = _workQueueManager.ScheduleWorkItemAsync(
+            timeout,
+            () => {
+                _output.WriteLine($"invoke {counter.ElapsedTicks}");
+
+                if (error)
+                {
+                    throw new Exception("error");
+                }
+
+                result = 1;
+            },
+            cts.Token
+        );
+
+        if (cancel)
         {
-            var j = i;
-
-            list.Enqueue(($"action put {j}", counter.ElapsedTicks));
-            taskSet.Add(_workQueueManager.ScheduleWorkItemAsync(
-                -20, 
-                () => {
-                    TestTask(counter, list, j);
-                },
-                cts.Token
-            ));
-
+            _output.WriteLine($"cancel {counter.ElapsedTicks}");
+            cts.Cancel();
         }
 
-        //cts.Cancel();
-
-        //終了待ち
-        while (taskSet.Count > 0)
+        try
         {
-            var task = await Task.WhenAny(taskSet).ConfigureAwait(false);
-            taskSet.Remove(task);
+            await task;
 
-            _output.WriteLine(($"task IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
+            _output.WriteLine($"result {result} {counter.ElapsedTicks}");
+
+            if (!alreadyCancel)
+            {
+                Assert.Equal(1, result);
+            }
+            else
+            {
+                Assert.Fail("");
+            }
         }
+        catch (TaskCanceledException e)
+        {
+            _output.WriteLine($"error {e}");
 
-        PrintResult(list);
+            if (!cancel && !alreadyCancel)
+            {
+                Assert.Fail("");
+            }
+        }
+        catch (Exception e)
+        {
+            _output.WriteLine($"error {e}");
+
+            if (!error)
+            {
+                Assert.Fail("");
+            }
+        }
     }
 
     [Fact]

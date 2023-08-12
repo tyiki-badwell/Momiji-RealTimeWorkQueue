@@ -8,7 +8,7 @@ using RTWorkQ = Momiji.Interop.RTWorkQ.NativeMethods;
 
 namespace Momiji.Core.RTWorkQueue;
 
-internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue
+internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwqAsyncResult>
 {
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<RTWorkQueueAsyncResultPoolValue> _logger;
@@ -60,7 +60,7 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue
         {
             try
             {
-                _parent.Invoke();
+                _parent.Invoke(pAsyncResult);
             }
             catch (Exception e)
             {
@@ -75,9 +75,6 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue
         RTWorkQueueManager parent
     ): base()
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         _loggerFactory = loggerFactory;
         _logger = _loggerFactory.CreateLogger<RTWorkQueueAsyncResultPoolValue>();
         _parent = parent;
@@ -107,6 +104,8 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue
 
             if (_rtwqAsyncResult != null)
             {
+                //TODO GeneratedComInterfaceでimportしたものをreleaseする方法？ FinalReleaseComObjectだとエラーになる
+
                 /*
                 //STAから呼ばれたときはMTAに移動して解放する
                 MTAExecuter.Invoke(_logger, () => {
@@ -141,23 +140,23 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue
         _afterAction = afterAction;
     }
 
-    protected override void InvokeCore(bool ignore)
+    protected override void InvokeCore(RTWorkQ.IRtwqAsyncResult asyncResult, bool ignore)
     {
         var apartmentType = ApartmentType.GetApartmentType();
 
         _logger.LogTrace($"RtwqAsyncCallback.Invoke Id:{Id} {CreatedApartmentType} {Status} / {apartmentType}");
+
+        if (ignore)
+        {
+            _logger.LogTrace($"RtwqAsyncCallback.Invoke skip Id:{Id} {CreatedApartmentType}");
+            return;
+        }
 
         Exception? error = null;
         var afterAction = _afterAction;
 
         try
         {
-            if (ignore)
-            {
-                _logger.LogTrace($"RtwqAsyncCallback.Invoke skip Id:{Id} {CreatedApartmentType}");
-                return;
-            }
-
             _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType}");
             InvokeAction();
             _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType} ok.");
@@ -176,10 +175,6 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue
                 unchecked((int)0x8000FFFF) // E_UNEXPECTED
             );
         }
-        finally
-        {
-            _parent.ReleaseAsyncResult(this);
-        }
 
         //TODO 続きはRtwqInvokeCallbackが良いか？
         try
@@ -191,6 +186,10 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue
         {
             _logger.LogError(e, $"afterAction.Invoke failed Id:{Id} {CreatedApartmentType} {_key.Key}.");
         }
+        finally
+        {
+            _parent.ReleaseAsyncResult(this);
+        }
     }
 
     private void InvokeAction()
@@ -199,12 +198,14 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue
             if (_action is Action action)
             {
                 action.Invoke();
+                return;
             }
         }
         {
             if (_action is Action<object?> action)
             {
                 action.Invoke(_state);
+                return;
             }
         }
     }
@@ -216,16 +217,16 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue
 
         _logger.LogTrace($"RtwqAsyncCallback.Cancel Id:{Id} {CreatedApartmentType} {Status} / {apartmentType}");
 
+        if (ignore)
+        {
+            _logger.LogTrace($"RtwqAsyncCallback.Cancel skip Id:{Id} {CreatedApartmentType}");
+            return;
+        }
+
         var afterAction = _afterAction;
 
         try
         {
-            if (ignore)
-            {
-                _logger.LogTrace($"RtwqAsyncCallback.Cancel skip Id:{Id} {CreatedApartmentType}");
-                return;
-            }
-
             if (_key.Key != RTWorkQ.RtWorkItemKey.None.Key)
             {
                 _logger.LogTrace($"RtwqCancelWorkItem Id:{Id} {CreatedApartmentType} {_key.Key}.");
@@ -263,6 +264,10 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue
         catch (Exception e)
         {
             _logger.LogError(e, $"afterAction.Invoke failed Id:{Id} {CreatedApartmentType} {_key.Key}.");
+        }
+        finally
+        {
+            _parent.ReleaseAsyncResult(this);
         }
     }
 

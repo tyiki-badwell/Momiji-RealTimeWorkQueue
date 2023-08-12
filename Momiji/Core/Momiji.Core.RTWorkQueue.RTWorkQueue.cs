@@ -18,7 +18,6 @@ internal partial class RTWorkQueue : IRTWorkQueue
     internal ApartmentType CreatedApartmentType { get; init; }
 
     private readonly RTWorkQueueManager _parent;
-    //private readonly RTWorkQ.WorkQueueId _workQueueid;
 
     internal RTWorkQ.WorkQueueId WorkQueueId
     {
@@ -34,9 +33,6 @@ internal partial class RTWorkQueue : IRTWorkQueue
         RTWorkQueueManager parent
     )
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         _loggerFactory = loggerFactory;
         _logger = _loggerFactory.CreateLogger<RTWorkQueue>();
         _parent = parent;
@@ -233,9 +229,6 @@ internal partial class RTWorkQueue : IRTWorkQueue
 
     public IDisposable Lock()
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         _logger.LogTrace("RtwqLockWorkQueue");
         Marshal.ThrowExceptionForHR(WorkQueueId.RtwqLockWorkQueue());
 
@@ -244,9 +237,6 @@ internal partial class RTWorkQueue : IRTWorkQueue
 
     internal void Unlock()
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         _logger.LogTrace("RtwqUnlockWorkQueue");
         Marshal.ThrowExceptionForHR(WorkQueueId.RtwqUnlockWorkQueue());
     }
@@ -255,9 +245,6 @@ internal partial class RTWorkQueue : IRTWorkQueue
         SafeHandle handle    
     )
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         _logger.LogTrace("RtwqJoinWorkQueue");
         Marshal.ThrowExceptionForHR(WorkQueueId.RtwqJoinWorkQueue(handle, out var cookie));
         return cookie;
@@ -294,26 +281,17 @@ internal partial class RTWorkQueue : IRTWorkQueue
 
     public int GetMMCSSTaskId()
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         Marshal.ThrowExceptionForHR(WorkQueueId.RtwqGetWorkQueueMMCSSTaskId(out var taskId));
         return taskId;
     }
     public IRTWorkQueue.TaskPriority GetMMCSSPriority()
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         Marshal.ThrowExceptionForHR(WorkQueueId.RtwqGetWorkQueueMMCSSPriority(out var priority));
         return (IRTWorkQueue.TaskPriority)priority;
     }
 
     public string GetMMCSSClass()
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         var length = 1;
 
         {
@@ -380,9 +358,6 @@ internal partial class RTWorkQueue : IRTWorkQueue
         int taskId
     )
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         CheckShutdown();
 
         var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
@@ -417,9 +392,6 @@ internal partial class RTWorkQueue : IRTWorkQueue
 
     public Task UnregisterMMCSSAsync()
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         CheckShutdown();
 
         var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
@@ -451,9 +423,6 @@ internal partial class RTWorkQueue : IRTWorkQueue
 
     public void SetLongRunning(bool enable)
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         CheckShutdown();
 
         Marshal.ThrowExceptionForHR(WorkQueueId.RtwqSetLongRunning(enable));
@@ -466,10 +435,6 @@ internal partial class RTWorkQueue : IRTWorkQueue
         CancellationToken ct = default
     )
     {
-        //QueueとAsyncResultを作ったApartmentTypeが一致している必要がある
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         CheckShutdown();
 
         var asyncResult = _parent.GetAsyncResult(0, WorkQueueId, action, null, afterAction);
@@ -484,10 +449,6 @@ internal partial class RTWorkQueue : IRTWorkQueue
         CancellationToken ct = default
     )
     {
-        //QueueとAsyncResultを作ったApartmentTypeが一致している必要がある
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         CheckShutdown();
 
         var asyncResult = _parent.GetAsyncResult(0, WorkQueueId, action, state, afterAction);

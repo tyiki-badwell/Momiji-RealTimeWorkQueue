@@ -9,7 +9,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <SignAssembly>False</SignAssembly>
     <PackageId>Momiji.RealTimeWorkQueue</PackageId>
-    <Version>0.0.1-alpha.1</Version>
+    <Version>0.0.1-alpha.2</Version>
     <Authors>tyiki-badwell</Authors>
     <Company>GroundATyiki</Company>
     <Description>.net wrapper for realtime-workqueue</Description>

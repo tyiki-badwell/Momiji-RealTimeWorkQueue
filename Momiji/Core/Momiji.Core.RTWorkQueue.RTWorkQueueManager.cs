@@ -114,7 +114,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     private readonly ILogger<RTWorkQueueManager> _logger;
     private bool _disposed;
 
-    private readonly Pool<uint, RTWorkQueueAsyncResultPoolValue> _pool;
+    private readonly Pool<uint, RTWorkQueueAsyncResultPoolValue, RTWorkQ.IRtwqAsyncResult> _pool;
 
     private uint _asyncResultId = 0;
 
@@ -152,11 +152,9 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
         _logger.LogTrace($"create {CreatedApartmentType}");
 
-        //TODO これの呼び出しはプロセス単位？スレッド単位？ STAかどうかは気にする？
         _logger.LogTrace("RtwqStartup");
         Marshal.ThrowExceptionForHR(RTWorkQ.RtwqStartup());
 
-        //TODO これの呼び出しはプロセス単位？スレッド単位？ STAかどうかは気にする？
         _logger.LogTrace("RtwqLockPlatform");
         Marshal.ThrowExceptionForHR(RTWorkQ.RtwqLockPlatform());
 

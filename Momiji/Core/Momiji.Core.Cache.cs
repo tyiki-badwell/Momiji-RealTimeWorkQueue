@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Momiji.Core.Cache;
 
-public abstract class PoolValue : IDisposable
+public abstract class PoolValue<TParam> : IDisposable
 {
     public enum PoolValueStatus : int
     {
@@ -73,19 +73,19 @@ public abstract class PoolValue : IDisposable
         Status = PoolValueStatus.Faulted;
     }
 
-    public void Invoke()
+    public void Invoke(TParam param)
     {
         if ((int)PoolValueStatus.WaitingToRun == Interlocked.CompareExchange(ref _status, (int)PoolValueStatus.Running, (int)PoolValueStatus.WaitingToRun))
         {
-            InvokeCore(false);
+            InvokeCore(param, false);
         }
         else
         {
-            InvokeCore(true);
+            InvokeCore(param, true);
         }
     }
 
-    protected abstract void InvokeCore(bool ignore);
+    protected abstract void InvokeCore(TParam param, bool ignore);
 
     public void Cancel()
     {
@@ -102,9 +102,9 @@ public abstract class PoolValue : IDisposable
     protected abstract void CancelCore(bool ignore);
 }
 
-public class Pool<TKey, TValue> : IDisposable
+public class Pool<TKey, TValue, TParam> : IDisposable
     where TKey : notnull
-    where TValue : notnull, PoolValue
+    where TValue : notnull, PoolValue<TParam>
 {
     private readonly ILogger _logger;
 
@@ -124,7 +124,7 @@ public class Pool<TKey, TValue> : IDisposable
         ArgumentNullException.ThrowIfNull(allocator);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
-        _logger = loggerFactory.CreateLogger<Pool<TKey, TValue>>();
+        _logger = loggerFactory.CreateLogger<Pool<TKey, TValue, TParam>>();
         _allocator = allocator;
     }
 
