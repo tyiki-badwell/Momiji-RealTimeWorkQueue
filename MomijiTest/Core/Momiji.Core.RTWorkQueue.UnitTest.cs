@@ -4,29 +4,24 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Momiji.Core.Timer;
-using Xunit;
-using Xunit.Abstractions;
 
 namespace Momiji.Core.RTWorkQueue;
 
+[TestClass]
 public class RTWorkQueueTest : IDisposable
 {
-    private const int TIMES = 50;
+    private const int TIMES = 100;
     private const int WAIT = 10;
 
     private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger _logger;
     private readonly RTWorkQueuePlatformEventsHandler _workQueuePlatformEventsHandler;
     private readonly RTWorkQueueManager _workQueueManager;
 
-    private readonly ITestOutputHelper _output;
-    
-    public RTWorkQueueTest(
-        ITestOutputHelper output
-    )
+    public RTWorkQueueTest()
     {
-        _output = output;
-
         var configuration = CreateConfiguration(/*usageClass, 0, taskId*/);
 
         _loggerFactory = LoggerFactory.Create(builder =>
@@ -35,13 +30,15 @@ public class RTWorkQueueTest : IDisposable
 
             builder.AddFilter("Momiji", LogLevel.Warning);
             builder.AddFilter("Momiji.Core.Cache", LogLevel.Information);
-            builder.AddFilter("Momiji.Core.RTWorkQueue", LogLevel.Information);
+            builder.AddFilter("Momiji.Core.RTWorkQueue", LogLevel.Trace);
             builder.AddFilter("Microsoft", LogLevel.Warning);
             builder.AddFilter("System", LogLevel.Warning);
 
             builder.AddConsole();
             builder.AddDebug();
         });
+
+        _logger = _loggerFactory.CreateLogger<RTWorkQueueTest>();
 
         _workQueuePlatformEventsHandler = new(_loggerFactory);
         _workQueueManager = new(configuration, _loggerFactory);
@@ -108,16 +105,16 @@ public class RTWorkQueueTest : IDisposable
     {
         {
             var (tag, time) = list.ToList()[^1];
-            _output.WriteLine($"LAST: {tag}\t{(double)time / 10000}");
+            _logger.LogInformation($"LAST: {tag}\t{(double)time / 10000}");
         }
 
         foreach (var (tag, time) in list)
         {
-            _output.WriteLine($"{tag}\t{(double)time / 10000}");
+            _logger.LogInformation($"{tag}\t{(double)time / 10000}");
         }
     }
 
-    [Fact]
+    [TestMethod]
     public void TestRtwqStartupTwice()
     {
         var configuration = CreateConfiguration();
@@ -129,12 +126,12 @@ public class RTWorkQueueTest : IDisposable
 
     }
 
-    [Theory]
-    [InlineData("Pro Audio", IRTWorkQueue.TaskPriority.CRITICAL)]
-    [InlineData("Pro Audio", IRTWorkQueue.TaskPriority.HIGH)]
-    [InlineData("Pro Audio", IRTWorkQueue.TaskPriority.NORMAL)]
-    [InlineData("Pro Audio", IRTWorkQueue.TaskPriority.LOW)]
-    [InlineData("", IRTWorkQueue.TaskPriority.NORMAL, true)]
+    [TestMethod]
+    [DataRow("Pro Audio", IRTWorkQueue.TaskPriority.CRITICAL)]
+    [DataRow("Pro Audio", IRTWorkQueue.TaskPriority.HIGH)]
+    [DataRow("Pro Audio", IRTWorkQueue.TaskPriority.NORMAL)]
+    [DataRow("Pro Audio", IRTWorkQueue.TaskPriority.LOW)]
+    [DataRow("", IRTWorkQueue.TaskPriority.NORMAL, true)]
     public void TestRtwqCreateWorkQueue(
         string usageClass,
         IRTWorkQueue.TaskPriority basePriority,
@@ -145,12 +142,12 @@ public class RTWorkQueueTest : IDisposable
 
         using var workQueue = _workQueueManager.CreatePlatformWorkQueue(usageClass, basePriority);
 
-        Assert.Equal(usageClass, workQueue.GetMMCSSClass());
-        Assert.Equal(basePriority, workQueue.GetMMCSSPriority());
+        Assert.AreEqual(usageClass, workQueue.GetMMCSSClass());
+        Assert.AreEqual(basePriority, workQueue.GetMMCSSPriority());
 
         try
         {
-            Assert.NotEqual(taskId, workQueue.GetMMCSSTaskId());
+            Assert.AreNotEqual(taskId, workQueue.GetMMCSSTaskId());
         }
         catch (COMException)
         {
@@ -163,7 +160,7 @@ public class RTWorkQueueTest : IDisposable
         }
     }
 
-    [Fact]
+    [TestMethod]
     public void TestRtwqLock()
     {
         using var workQueue = _workQueueManager.CreatePlatformWorkQueue();
@@ -179,7 +176,7 @@ public class RTWorkQueueTest : IDisposable
         }
     }
 
-    [Fact]
+    [TestMethod]
     public async Task TestRtwqJoin()
     {
         using var workQueue = _workQueueManager.CreatePlatformWorkQueue();
@@ -198,12 +195,12 @@ public class RTWorkQueueTest : IDisposable
             listener.Listen(100);
 
             using var cookie = workQueue.Join(listener.SafeHandle);
-            _output.WriteLine("server join");
+            _logger.LogInformation("server join");
 
             //TODO join‚µ‚½Œã‚Éasync”Å‚ðŒÄ‚Ño‚·‚ÆƒGƒ‰[‚É‚È‚é
             //var handler = await listener.AcceptAsync();
             var handler = listener.Accept();
-            _output.WriteLine("accept");
+            _logger.LogInformation("accept");
 
             while(true)
             {
@@ -214,14 +211,14 @@ public class RTWorkQueueTest : IDisposable
                     break;
                 }
                 var s = System.Text.Encoding.ASCII.GetString(buffer);
-                _output.WriteLine($"receive [{s}]");
+                _logger.LogInformation($"receive [{s}]");
             }
 
             await Task.Delay(5000);
         });
 
         var client = Task.Run(async () => {
-            _output.WriteLine("run client");
+            _logger.LogInformation("run client");
 
             using var client = 
                 new Socket(
@@ -232,12 +229,12 @@ public class RTWorkQueueTest : IDisposable
             await Task.Delay(100);
 
             using var cookie = workQueue.Join(client.SafeHandle);
-            _output.WriteLine("client join");
+            _logger.LogInformation("client join");
 
             //TODO join‚µ‚½Œã‚Éasync”Å‚ðŒÄ‚Ño‚·‚ÆƒGƒ‰[‚É‚È‚é
             //await client.ConnectAsync(ipEndPoint);
             client.Connect(ipEndPoint);
-            _output.WriteLine("connect");
+            _logger.LogInformation("connect");
 
             var options = new ParallelOptions
             {
@@ -248,7 +245,7 @@ public class RTWorkQueueTest : IDisposable
                 var text = "1234567890:" + index.ToString();
                 var buffer = System.Text.Encoding.ASCII.GetBytes(text + "\n");
                 client.Send(buffer);
-                _output.WriteLine($"send [{text}]");
+                _logger.LogInformation($"send [{text}]");
             });
 
             await Task.Delay(1000);
@@ -258,7 +255,7 @@ public class RTWorkQueueTest : IDisposable
         await client;
     }
 
-    [Fact]
+    [TestMethod]
     public async Task TestRtwqSetDeadline()
     {
         using var workQueue = _workQueueManager.CreatePlatformWorkQueue();
@@ -312,17 +309,17 @@ public class RTWorkQueueTest : IDisposable
             var task = await Task.WhenAny(taskMap.Keys).ConfigureAwait(false);
             taskMap.Remove(task, out var id);
 
-            _output.WriteLine(($"task {id} IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
+            _logger.LogInformation(($"task {id} IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
         }
 
         PrintResult(list);
     }
 
-    [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(true, true)]
     public async Task TestRtwqPutWorkItemAsync(
         bool cancel,
         bool error
@@ -369,17 +366,17 @@ public class RTWorkQueueTest : IDisposable
             var task = await Task.WhenAny(taskMap.Keys).ConfigureAwait(false);
             taskMap.Remove(task, out var id);
 
-            _output.WriteLine(($"task {id} IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
+            _logger.LogInformation(($"task {id} IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
         }
 
         PrintResult(list);
     }
 
-    [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(true, true)]
     public async Task TestRtwqPutWorkItem(
         bool cancel,
         bool error
@@ -432,29 +429,30 @@ public class RTWorkQueueTest : IDisposable
         PrintResult(list);
     }
 
-    [Theory]
-    [InlineData("Audio")]
-    [InlineData("Capture")]
-    [InlineData("DisplayPostProcessing", null, false, true)]
-    [InlineData("Distribution")]
-    [InlineData("Games")]
-    [InlineData("Playback")]
-    [InlineData("Pro Audio")]
-    [InlineData("Window Manager")]
-    [InlineData("Audio", null, true)]
-    [InlineData("Capture", null, true)]
-    [InlineData("DisplayPostProcessing", null, true, true)]
-    [InlineData("Distribution", null, true)]
-    [InlineData("Games", null, true)]
-    [InlineData("Playback", null, true)]
-    [InlineData("Pro Audio", null, true)]
-    [InlineData("Window Manager", null, true)]
-    [InlineData("", IRTWorkQueue.WorkQueueType.Standard)]
-    [InlineData("", IRTWorkQueue.WorkQueueType.Window)]
-    [InlineData("", IRTWorkQueue.WorkQueueType.MultiThreaded)]
-    [InlineData("", IRTWorkQueue.WorkQueueType.Standard, true)]
-    [InlineData("", IRTWorkQueue.WorkQueueType.Window, true, true)] //window‚Ìserial‚ÍNG‚ç‚µ‚¢
-    [InlineData("", IRTWorkQueue.WorkQueueType.MultiThreaded, true)]
+    [TestMethod]
+    [Timeout(10000)]
+    [DataRow("Audio")]
+    [DataRow("Audio", null, true)]
+    [DataRow("Capture")]
+    [DataRow("Capture", null, true)]
+    [DataRow("DisplayPostProcessing", null, false, true)]
+    [DataRow("DisplayPostProcessing", null, true, true)]
+    [DataRow("Distribution")]
+    [DataRow("Distribution", null, true)]
+    [DataRow("Games")]
+    [DataRow("Games", null, true)]
+    [DataRow("Playback")]
+    [DataRow("Playback", null, true)]
+    [DataRow("Pro Audio")]
+    [DataRow("Pro Audio", null, true)]
+    [DataRow("Window Manager")]
+    [DataRow("Window Manager", null, true)]
+    [DataRow("", IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow("", IRTWorkQueue.WorkQueueType.Standard, true)]
+    [DataRow("", IRTWorkQueue.WorkQueueType.Window)]
+    [DataRow("", IRTWorkQueue.WorkQueueType.Window, true, true)] //window‚Ìserial‚ÍNG‚ç‚µ‚¢
+    [DataRow("", IRTWorkQueue.WorkQueueType.MultiThreaded)]
+    [DataRow("", IRTWorkQueue.WorkQueueType.MultiThreaded, true)]
     public async Task TestRtwqAsync(
         string usageClass,
         IRTWorkQueue.WorkQueueType? type = null,
@@ -505,50 +503,57 @@ public class RTWorkQueueTest : IDisposable
 
             {
                 //‚P‰ñ–Ú‚Ì‹N“®‚ª’x‚¢‚Ì‚ÅA‹ó‘Å‚¿‚·‚é
-                _output.WriteLine("dummy action start.");
+                _logger.LogInformation("dummy action start.");
                 var task = workQueue.PutWorkItemAsync(
                     IRTWorkQueue.TaskPriority.NORMAL,
                     () =>
                     {
-                        _output.WriteLine("dummy invoke.");
+                        _logger.LogInformation("dummy invoke.");
                     }
                 );
-                await task;
+                await task.ConfigureAwait(false);
 
-                _output.WriteLine($"dummy action end task IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}");
+                _logger.LogInformation($"dummy action end task IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}");
             }
 
-            using var cde = new CountdownEvent(TIMES);
-            var list = new ConcurrentQueue<(string, long)>();
-            var taskSet = new HashSet<Task>();
-            var counter = new ElapsedTimeCounter();
-            counter.Reset();
-
-            for (var i = 1; i <= TIMES; i++)
             {
-                var j = i;
-                list.Enqueue(($"action put {i}", counter.ElapsedTicks));
-                taskSet.Add(workQueue.PutWorkItemAsync(
-                    IRTWorkQueue.TaskPriority.NORMAL,
-                    () =>
-                    {
-                        TestTask(counter, list, j, cde);
-                    }
-                ));
+                using var cde = new CountdownEvent(TIMES);
+                var list = new ConcurrentQueue<(string, long)>();
+                var taskSet = new HashSet<Task>();
+                var counter = new ElapsedTimeCounter();
+                counter.Reset();
+
+                for (var i = 1; i <= TIMES; i++)
+                {
+                    var j = i;
+                    _logger.LogInformation($"action put {j}");
+                    list.Enqueue(($"action put {j}", counter.ElapsedTicks));
+                    taskSet.Add(workQueue.PutWorkItemAsync(
+                        IRTWorkQueue.TaskPriority.NORMAL,
+                        () =>
+                        {
+                            _logger.LogInformation($"invoke {j}");
+                            TestTask(counter, list, j, cde);
+                        }
+                    ));
+                }
+                _logger.LogInformation("cde wait ...");
+
+                //serial queue‚È‚Ç‚Å‚ÍAput‚µ‚½ƒXƒŒƒbƒh‚Åwait‚µ‚ÄƒuƒƒbƒN‚·‚é‚ÆAinvoke‚³‚ê‚È‚­‚È‚Á‚Ä‚µ‚Ü‚¤
+                await Task.Run(() => { cde.Wait(); }).ConfigureAwait(false);
+
+                //I—¹‘Ò‚¿
+                while (taskSet.Count > 0)
+                {
+                    _logger.LogInformation("task wait ...");
+                    var task = await Task.WhenAny(taskSet).ConfigureAwait(false);
+                    taskSet.Remove(task);
+
+                    _logger.LogInformation(($"task IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
+                }
+
+                PrintResult(list);
             }
-
-            cde.Wait();
-
-            //I—¹‘Ò‚¿
-            while (taskSet.Count > 0)
-            {
-                var task = await Task.WhenAny(taskSet).ConfigureAwait(false);
-                taskSet.Remove(task);
-
-                _output.WriteLine(($"task IsCanceled:{task.IsCanceled} IsFaulted:{task.IsFaulted} IsCompletedSuccessfully:{task.IsCompletedSuccessfully}"));
-            }
-
-            PrintResult(list);
         }
         finally
         {
@@ -561,41 +566,42 @@ public class RTWorkQueueTest : IDisposable
         }
     }
 
-    [Theory]
-    [InlineData(null, null, false, true)] //usage class‚Énull‚ÍNG
-    [InlineData("")] //shared queue ‚ð""‚Åì¬‚·‚é‚Ì‚Íregular-priority queue‚ðì‚é“ÁŽê‚È“®ì‚É‚È‚Á‚Ä‚¢‚é
-    [InlineData("Audio")]
-    [InlineData("Capture")]
-    [InlineData("DisplayPostProcessing", null, false, true)] //‰‚ß‚©‚çDisplayPostProcessing‚ÍŽ¸”s‚·‚é
-    [InlineData("Distribution")]
-    [InlineData("Games")]
-    [InlineData("Playback")]
-    [InlineData("Pro Audio")]
-    [InlineData("Window Manager")]
-    [InlineData("****", null, false, true)] //Ž¸”s‚·‚é
-    [InlineData("Audio", null, true)]
-    [InlineData("Capture", null, true)]
-    [InlineData("DisplayPostProcessing", null, true, true)] //Ž¸”s‚·‚é
-    [InlineData("Distribution", null, true)]
-    [InlineData("Games", null, true)]
-    [InlineData("Playback", null, true)]
-    [InlineData("Pro Audio", null, true)]
-    [InlineData("Window Manager", null, true)]
-    [InlineData(null, IRTWorkQueue.WorkQueueType.Standard)]
-    [InlineData("", IRTWorkQueue.WorkQueueType.Standard, false, true)] //private queue‚ð""‚É“o˜^‚·‚é‚ÆŽ¸”s‚·‚é
-    [InlineData("Audio", IRTWorkQueue.WorkQueueType.Standard)]
-    [InlineData("Capture", IRTWorkQueue.WorkQueueType.Standard)]
-    [InlineData("DisplayPostProcessing", IRTWorkQueue.WorkQueueType.Standard)]
-    [InlineData("Distribution", IRTWorkQueue.WorkQueueType.Standard)]
-    [InlineData("Games", IRTWorkQueue.WorkQueueType.Standard)]
-    [InlineData("Playback", IRTWorkQueue.WorkQueueType.Standard)]
-    [InlineData("Pro Audio", IRTWorkQueue.WorkQueueType.Standard)]
-    [InlineData("Window Manager", IRTWorkQueue.WorkQueueType.Standard)]
-    [InlineData(null, IRTWorkQueue.WorkQueueType.Window)]
-    [InlineData(null, IRTWorkQueue.WorkQueueType.MultiThreaded)]
-    [InlineData(null, IRTWorkQueue.WorkQueueType.Standard, true)]
-    [InlineData(null, IRTWorkQueue.WorkQueueType.Window, true, true)]
-    [InlineData(null, IRTWorkQueue.WorkQueueType.MultiThreaded, true)]
+    [TestMethod]
+    [Timeout(5000)]
+    [DataRow(null, null, false, true)] //usage class‚Énull‚ÍNG
+    [DataRow("")] //shared queue ‚ð""‚Åì¬‚·‚é‚Ì‚Íregular-priority queue‚ðì‚é“ÁŽê‚È“®ì‚É‚È‚Á‚Ä‚¢‚é
+    [DataRow("", IRTWorkQueue.WorkQueueType.Standard, false, true)] //private queue‚ð""‚É“o˜^‚·‚é‚ÆŽ¸”s‚·‚é
+    [DataRow("****", null, false, true)] //Ž¸”s‚·‚é
+    [DataRow("Audio")]
+    [DataRow("Audio", null, true)]
+    [DataRow("Audio", IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow("Capture")]
+    [DataRow("Capture", null, true)]
+    [DataRow("Capture", IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow("DisplayPostProcessing", null, false, true)] //‰‚ß‚©‚çDisplayPostProcessing‚ÍŽ¸”s‚·‚é
+    [DataRow("DisplayPostProcessing", null, true, true)] //Ž¸”s‚·‚é
+    [DataRow("DisplayPostProcessing", IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow("Distribution")]
+    [DataRow("Distribution", null, true)]
+    [DataRow("Distribution", IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow("Games")]
+    [DataRow("Games", null, true)]
+    [DataRow("Games", IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow("Playback")]
+    [DataRow("Playback", null, true)]
+    [DataRow("Playback", IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow("Pro Audio")]
+    [DataRow("Pro Audio", null, true)]
+    [DataRow("Pro Audio", IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow("Window Manager")]
+    [DataRow("Window Manager", null, true)]
+    [DataRow("Window Manager", IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow(null, IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow(null, IRTWorkQueue.WorkQueueType.Standard, true)]
+    [DataRow(null, IRTWorkQueue.WorkQueueType.Window)]
+    [DataRow(null, IRTWorkQueue.WorkQueueType.Window, true, true)]
+    [DataRow(null, IRTWorkQueue.WorkQueueType.MultiThreaded)]
+    [DataRow(null, IRTWorkQueue.WorkQueueType.MultiThreaded, true)]
     public async Task TestRtwq(
         string? usageClass = null,
         IRTWorkQueue.WorkQueueType? type = null,
@@ -688,53 +694,60 @@ public class RTWorkQueueTest : IDisposable
                 }
 
                 var afterClass = workQueue.GetMMCSSClass();
-                Assert.Equal(usageClass, afterClass);
+                Assert.AreEqual(usageClass, afterClass);
             }
 
             {
+                using var wait = new ManualResetEventSlim(false);
                 //‚P‰ñ–Ú‚Ì‹N“®‚ª’x‚¢‚Ì‚ÅA‹ó‘Å‚¿‚·‚é
-                _output.WriteLine("dummy action start.");
+                _logger.LogInformation("dummy action start.");
                 workQueue.PutWorkItem(
                     IRTWorkQueue.TaskPriority.NORMAL,
                     () =>
                     {
-                        _output.WriteLine("dummy invoke.");
+                        _logger.LogInformation("dummy invoke.");
                     },
                     (error, ct) =>
                     {
-                        _output.WriteLine($"dummy result error [{error}] ct [{ct.IsCancellationRequested}].");
+                        _logger.LogInformation($"dummy result error [{error}] ct [{ct.IsCancellationRequested}].");
+                        wait.Set();
                     }
                 );
-                _output.WriteLine("dummy action end.");
+
+                await Task.Run(()=>{ wait.Wait(); }).ConfigureAwait(false);
+                
+                _logger.LogInformation("dummy action end.");
             }
 
-            using var cde = new CountdownEvent(TIMES);
-            var list = new ConcurrentQueue<(string, long)>();
-
-            var counter = new ElapsedTimeCounter();
-            counter.Reset();
-
-            for (var i = 1; i <= TIMES; i++)
             {
-                var j = i;
+                using var cde = new CountdownEvent(TIMES);
+                var list = new ConcurrentQueue<(string, long)>();
 
-                list.Enqueue(($"action put {i}", counter.ElapsedTicks));
-                workQueue.PutWorkItem(
-                    IRTWorkQueue.TaskPriority.NORMAL,
-                    () =>
-                    {
-                        TestTask(counter, list, j, cde);
-                    },
-                    (error, ct) =>
-                    {
-                        list.Enqueue(($"result error [{error}] ct [{ct.IsCancellationRequested}].", counter.ElapsedTicks));
-                    }
-                );
+                var counter = new ElapsedTimeCounter();
+                counter.Reset();
+
+                for (var i = 1; i <= TIMES; i++)
+                {
+                    var j = i;
+
+                    list.Enqueue(($"action put {i}", counter.ElapsedTicks));
+                    workQueue.PutWorkItem(
+                        IRTWorkQueue.TaskPriority.NORMAL,
+                        () =>
+                        {
+                            TestTask(counter, list, j, cde);
+                        },
+                        (error, ct) =>
+                        {
+                            list.Enqueue(($"result error [{error}] ct [{ct.IsCancellationRequested}].", counter.ElapsedTicks));
+                        }
+                    );
+                }
+
+                await Task.Run(() => { cde.Wait(); }).ConfigureAwait(false);
+
+                PrintResult(list);
             }
-
-            cde.Wait();
-
-            PrintResult(list);
         }
         finally
         {
@@ -755,7 +768,7 @@ public class RTWorkQueueTest : IDisposable
         }
     }
 
-    [Fact]
+    [TestMethod]
     public void TestWorkQueuePeriodicCallback()
     {
         _workQueueManager.RegisterMMCSS("Pro Audio");
@@ -782,8 +795,8 @@ public class RTWorkQueueTest : IDisposable
         PrintResult(list);
     }
 
-    [Theory]
-    [InlineData("Pro Audio")]
+    [TestMethod]
+    [DataRow("Pro Audio")]
     public async Task TestRtwqPutWaitingAsync_WaitableTimer(string usageClass)
     {
         _workQueueManager.RegisterMMCSS(usageClass);
@@ -820,8 +833,8 @@ public class RTWorkQueueTest : IDisposable
         PrintResult(list);
     }
 
-    [Theory]
-    [InlineData("Pro Audio")]
+    [TestMethod]
+    [DataRow("Pro Audio")]
     public void TestRtwqPutWaiting_WaitableTimer(string usageClass)
     {
         _workQueueManager.RegisterMMCSS(usageClass);
@@ -895,12 +908,12 @@ public class RTWorkQueueTest : IDisposable
         PrintResult(list);
     }
 
-    [Theory]
-    [InlineData("Pro Audio", true, false, false, false)] //Fire
-    [InlineData("Pro Audio", false, true, false, false)] //Cancel
-    [InlineData("Pro Audio", true, true, false, false)] //Fire_Cancel
-    [InlineData("Pro Audio", false, false, true, false)] //Already_Cancel
-    [InlineData("Pro Audio", true, false, false, true)] //Fire_Error
+    [TestMethod]
+    [DataRow("Pro Audio", true, false, false, false)] //Fire
+    [DataRow("Pro Audio", false, true, false, false)] //Cancel
+    [DataRow("Pro Audio", true, true, false, false)] //Fire_Cancel
+    [DataRow("Pro Audio", false, false, true, false)] //Already_Cancel
+    [DataRow("Pro Audio", true, false, false, true)] //Fire_Error
     public void TestRtwqPutWaiting(
         string usageClass,
         bool fire,
@@ -921,7 +934,7 @@ public class RTWorkQueueTest : IDisposable
 
         if (alreadyCancel)
         {
-            _output.WriteLine($"already cancel {counter.ElapsedTicks}");
+            _logger.LogInformation($"already cancel {counter.ElapsedTicks}");
             cts.Cancel();
         }
 
@@ -935,7 +948,7 @@ public class RTWorkQueueTest : IDisposable
             0,
             waitHandle,
             () => {
-                _output.WriteLine($"invoke {counter.ElapsedTicks}");
+                _logger.LogInformation($"invoke {counter.ElapsedTicks}");
 
                 if (error)
                 {
@@ -956,14 +969,14 @@ public class RTWorkQueueTest : IDisposable
         if (cancel)
         {
             Task.Delay(100).Wait();
-            _output.WriteLine($"cancel {counter.ElapsedTicks}");
+            _logger.LogInformation($"cancel {counter.ElapsedTicks}");
             cts.Cancel();
         }
 
         if (fire)
         {
             Task.Delay(100).Wait();
-            _output.WriteLine($"set {counter.ElapsedTicks}");
+            _logger.LogInformation($"set {counter.ElapsedTicks}");
             waitHandle.Set();
         }
 
@@ -971,7 +984,7 @@ public class RTWorkQueueTest : IDisposable
 
         if (ct.IsCancellationRequested)
         {
-            _output.WriteLine($"cancel");
+            _logger.LogInformation($"cancel");
 
             if (!cancel && !alreadyCancel)
             {
@@ -980,7 +993,7 @@ public class RTWorkQueueTest : IDisposable
         }
         else if (exception != null)
         {
-            _output.WriteLine($"error {exception}");
+            _logger.LogInformation($"error {exception}");
 
             if (!error)
             {
@@ -989,11 +1002,11 @@ public class RTWorkQueueTest : IDisposable
         }
         else
         {
-            _output.WriteLine($"result {result} {counter.ElapsedTicks}");
+            _logger.LogInformation($"result {result} {counter.ElapsedTicks}");
 
             if (fire)
             {
-                Assert.Equal(1, result);
+                Assert.AreEqual(1, result);
             }
             else
             {
@@ -1002,12 +1015,12 @@ public class RTWorkQueueTest : IDisposable
         }
     }
 
-    [Theory]
-    [InlineData("Pro Audio", true, false, false, false)] //Fire
-    [InlineData("Pro Audio", false, true, false, false)] //Cancel
-    [InlineData("Pro Audio", true, true, false, false)] //Fire_Cancel
-    [InlineData("Pro Audio", false, false, true, false)] //Already_Cancel
-    [InlineData("Pro Audio", true, false, false, true)] //Fire_Error
+    [TestMethod]
+    [DataRow("Pro Audio", true, false, false, false)] //Fire
+    [DataRow("Pro Audio", false, true, false, false)] //Cancel
+    [DataRow("Pro Audio", true, true, false, false)] //Fire_Cancel
+    [DataRow("Pro Audio", false, false, true, false)] //Already_Cancel
+    [DataRow("Pro Audio", true, false, false, true)] //Fire_Error
     public async Task TestRtwqPutWaitingAsync(
         string usageClass,
         bool fire,
@@ -1028,7 +1041,7 @@ public class RTWorkQueueTest : IDisposable
 
         if (alreadyCancel)
         {
-            _output.WriteLine($"already cancel {counter.ElapsedTicks}");
+            _logger.LogInformation($"already cancel {counter.ElapsedTicks}");
             cts.Cancel();
         }
 
@@ -1037,7 +1050,7 @@ public class RTWorkQueueTest : IDisposable
             0, 
             waitHandle, 
             () => {
-                _output.WriteLine($"invoke {counter.ElapsedTicks}");
+                _logger.LogInformation($"invoke {counter.ElapsedTicks}");
 
                 if (error)
                 {
@@ -1052,14 +1065,14 @@ public class RTWorkQueueTest : IDisposable
         if (cancel)
         {
             await Task.Delay(100);
-            _output.WriteLine($"cancel {counter.ElapsedTicks}");
+            _logger.LogInformation($"cancel {counter.ElapsedTicks}");
             cts.Cancel();
         }
 
         if (fire)
         {
             await Task.Delay(100);
-            _output.WriteLine($"set {counter.ElapsedTicks}");
+            _logger.LogInformation($"set {counter.ElapsedTicks}");
             waitHandle.Set();
         }
 
@@ -1067,11 +1080,11 @@ public class RTWorkQueueTest : IDisposable
         {
             await task;
 
-            _output.WriteLine($"result {result} {counter.ElapsedTicks}");
+            _logger.LogInformation($"result {result} {counter.ElapsedTicks}");
 
             if (fire)
             {
-                Assert.Equal(1, result);
+                Assert.AreEqual(1, result);
             }
             else
             {
@@ -1080,7 +1093,7 @@ public class RTWorkQueueTest : IDisposable
         }
         catch (TaskCanceledException e)
         {
-            _output.WriteLine($"error {e}");
+            _logger.LogInformation($"error {e}");
 
             if (!cancel && !alreadyCancel)
             {
@@ -1089,7 +1102,7 @@ public class RTWorkQueueTest : IDisposable
         }
         catch (Exception e)
         {
-            _output.WriteLine($"error {e}");
+            _logger.LogInformation($"error {e}");
 
             if (!error)
             {
@@ -1098,12 +1111,12 @@ public class RTWorkQueueTest : IDisposable
         }
     }
 
-    [Theory]
-    [InlineData("Pro Audio", 0, false, false, false)] //Fire
-    [InlineData("Pro Audio", -1, false, false, false)] //Fire
-    [InlineData("Pro Audio", -100, true, false, false)] //Cancel
-    [InlineData("Pro Audio", -100, false, true, false)] //Already_Cancel
-    [InlineData("Pro Audio", -1, false, false, true)] //Fire_Error
+    [TestMethod]
+    [DataRow("Pro Audio", 0, false, false, false)] //Fire
+    [DataRow("Pro Audio", -1, false, false, false)] //Fire
+    [DataRow("Pro Audio", -100, true, false, false)] //Cancel
+    [DataRow("Pro Audio", -100, false, true, false)] //Already_Cancel
+    [DataRow("Pro Audio", -1, false, false, true)] //Fire_Error
     public async Task TestRtwqScheduleAsync(
         string usageClass,
         long timeout,
@@ -1121,7 +1134,7 @@ public class RTWorkQueueTest : IDisposable
 
         if (alreadyCancel)
         {
-            _output.WriteLine($"already cancel {counter.ElapsedTicks}");
+            _logger.LogInformation($"already cancel {counter.ElapsedTicks}");
             cts.Cancel();
         }
 
@@ -1129,12 +1142,12 @@ public class RTWorkQueueTest : IDisposable
 
         var result = 0;
 
-        _output.WriteLine($"put {counter.ElapsedTicks}");
+        _logger.LogInformation($"put {counter.ElapsedTicks}");
 
         var task = _workQueueManager.ScheduleWorkItemAsync(
             timeout,
             () => {
-                _output.WriteLine($"invoke {counter.ElapsedTicks}");
+                _logger.LogInformation($"invoke {counter.ElapsedTicks}");
 
                 if (error)
                 {
@@ -1148,7 +1161,7 @@ public class RTWorkQueueTest : IDisposable
 
         if (cancel)
         {
-            _output.WriteLine($"cancel {counter.ElapsedTicks}");
+            _logger.LogInformation($"cancel {counter.ElapsedTicks}");
             cts.Cancel();
         }
 
@@ -1156,11 +1169,11 @@ public class RTWorkQueueTest : IDisposable
         {
             await task;
 
-            _output.WriteLine($"result {result} {counter.ElapsedTicks}");
+            _logger.LogInformation($"result {result} {counter.ElapsedTicks}");
 
             if (!alreadyCancel)
             {
-                Assert.Equal(1, result);
+                Assert.AreEqual(1, result);
             }
             else
             {
@@ -1169,7 +1182,7 @@ public class RTWorkQueueTest : IDisposable
         }
         catch (TaskCanceledException e)
         {
-            _output.WriteLine($"error {e}");
+            _logger.LogInformation($"error {e}");
 
             if (!cancel && !alreadyCancel)
             {
@@ -1178,7 +1191,7 @@ public class RTWorkQueueTest : IDisposable
         }
         catch (Exception e)
         {
-            _output.WriteLine($"error {e}");
+            _logger.LogInformation($"error {e}");
 
             if (!error)
             {
@@ -1187,7 +1200,7 @@ public class RTWorkQueueTest : IDisposable
         }
     }
 
-    [Fact]
+    [TestMethod]
     public void TestRegisterPlatformWithMMCSS()
     {
         var usageClass = "Audio";
@@ -1202,23 +1215,23 @@ public class RTWorkQueueTest : IDisposable
         _workQueueManager.RegisterMMCSS(usageClass, IRTWorkQueue.TaskPriority.LOW, 2);
     }
 
-    [Fact]
+    [TestMethod]
     public async Task TestRegisterWorkQueueWithMMCSS()
     {
         var usageClass = "Audio";
 
         using var workQueue = _workQueueManager.CreatePlatformWorkQueue(usageClass);
-        Assert.Equal(usageClass, workQueue.GetMMCSSClass());
+        Assert.AreEqual(usageClass, workQueue.GetMMCSSClass());
 
         await workQueue.UnregisterMMCSSAsync();
 
-        Assert.Equal("", workQueue.GetMMCSSClass());
+        Assert.AreEqual("", workQueue.GetMMCSSClass());
 
         usageClass = "Pro Audio";
         await workQueue.RegisterMMCSSAsync(usageClass, IRTWorkQueue.TaskPriority.HIGH, 1);
 
-        Assert.Equal(usageClass, workQueue.GetMMCSSClass());
-        Assert.Equal(IRTWorkQueue.TaskPriority.HIGH, workQueue.GetMMCSSPriority());
+        Assert.AreEqual(usageClass, workQueue.GetMMCSSClass());
+        Assert.AreEqual(IRTWorkQueue.TaskPriority.HIGH, workQueue.GetMMCSSPriority());
 
     }
 

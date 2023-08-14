@@ -269,11 +269,14 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         var asyncResult = _pool.Get();
 
         asyncResult.Initialize(flags, queue, action, state, afterAction);
+
+        _logger.LogTrace($"GetAsyncResult Id:{asyncResult.Id}");
         return asyncResult;
     }
 
     internal void ReleaseAsyncResult(RTWorkQueueAsyncResultPoolValue asyncResult)
     {
+        _logger.LogTrace($"ReleaseAsyncResult Id:{asyncResult.Id}");
         _pool.Release(asyncResult.Id);
     }
 

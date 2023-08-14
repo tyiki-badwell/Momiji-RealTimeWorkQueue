@@ -1,21 +1,71 @@
 using System.Collections.Concurrent;
-using Xunit;
-using Xunit.Abstractions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Momiji.Core.Timer;
 
-public class WaitableTimerTest
+[TestClass]
+public class WaitableTimerTest : IDisposable
 {
     private const int TIMES = 100;
     private const int INTERVAL = 5_000_0;
 
-    private readonly ITestOutputHelper _output;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger _logger;
 
-    public WaitableTimerTest(
-        ITestOutputHelper output
-    )
+    public WaitableTimerTest()
     {
-        _output = output;
+        var configuration = CreateConfiguration(/*usageClass, 0, taskId*/);
+
+        _loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.AddConfiguration(configuration);
+
+            builder.AddFilter("Momiji", LogLevel.Warning);
+            builder.AddFilter("Momiji.Core.Cache", LogLevel.Information);
+            builder.AddFilter("Momiji.Core.RTWorkQueue", LogLevel.Information);
+            builder.AddFilter("Microsoft", LogLevel.Warning);
+            builder.AddFilter("System", LogLevel.Warning);
+
+            builder.AddConsole();
+            builder.AddDebug();
+        });
+
+        _logger = _loggerFactory.CreateLogger<WaitableTimerTest>();
+    }
+
+    public void Dispose()
+    {
+        _loggerFactory.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    private static IConfiguration CreateConfiguration(string usageClass = "", int basePriority = 0, int taskId = 0)
+    {
+        var configuration =
+            new ConfigurationBuilder()
+            .AddJsonFile("appsettings.json")
+            .Build();
+
+        var section = configuration.GetSection("Momiji.Core.WorkQueue.WorkQueueManager");
+
+        if (usageClass != "")
+        {
+            section["UsageClass"] = usageClass;
+        }
+
+        if (basePriority != 0)
+        {
+            section["BasePriority"] = basePriority.ToString();
+        }
+
+        if (taskId != 0)
+        {
+            section["TaskId"] = taskId.ToString();
+        }
+
+        return configuration;
     }
 
     private void PrintResult(
@@ -24,20 +74,20 @@ public class WaitableTimerTest
     {
         {
             var (tag, time) = list.ToList()[^1];
-            _output.WriteLine($"LAST: {tag}\t{(double)time / 10000}");
+            _logger.LogInformation($"LAST: {tag}\t{(double)time / 10000}");
         }
 
         foreach (var (tag, time) in list)
         {
-            _output.WriteLine($"{tag}\t{(double)time / 10000}");
+            _logger.LogInformation($"{tag}\t{(double)time / 10000}");
         }
     }
 
-    [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(true, true)]
     public void Test1Impl(
         bool manualReset,
         bool highResolution
@@ -66,22 +116,9 @@ public class WaitableTimerTest
         PrintResult(list);
     }
 
-}
-
-public class WaiterTest
-{
-    private readonly ITestOutputHelper _output;
-
-    public WaiterTest(
-        ITestOutputHelper output
-    )
-    {
-        _output = output;
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     public void TestWait(bool highResolution)
     {
         var counter = new ElapsedTimeCounter();
@@ -117,11 +154,11 @@ public class WaiterTest
 
         foreach (var (i, laps, before, after, leftTicks) in list)
         {
-            _output.WriteLine($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}\t{leftTicks}");
+            _logger.LogInformation($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}\t{leftTicks}");
         }
     }
 
-    [Fact]
+    [TestMethod]
     public async Task TestPeriodicTimerAsync()
     {
         var counter = new ElapsedTimeCounter();
@@ -149,12 +186,12 @@ public class WaiterTest
 
         foreach (var (i, laps, before, after) in list)
         {
-            _output.WriteLine($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}");
+            _logger.LogInformation($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}");
         }
 
     }
 
-    [Fact]
+    [TestMethod]
     public async Task TestRegisterWaitForSingleObjectAsync()
     {
         var counter = new ElapsedTimeCounter();
@@ -190,7 +227,7 @@ public class WaiterTest
 
         foreach (var (i, laps, before, after) in list)
         {
-            _output.WriteLine($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}");
+            _logger.LogInformation($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}");
         }
     }
 }
