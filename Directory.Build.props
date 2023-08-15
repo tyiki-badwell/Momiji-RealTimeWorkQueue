@@ -1,10 +1,8 @@
 <Project>
+  <!-- See https://aka.ms/dotnet/msbuild/customize for more details on customizing your build -->
   <PropertyGroup>
-	<BuildOutDir>$([MSBuild]::NormalizeDirectory('$(SolutionDir)', '_build', '$(Platform)', '$(Configuration)', '$(TargetCompactFramework)'))</BuildOutDir>
-	<OutDir>$([MSBuild]::NormalizeDirectory('$(BuildOutDir)', '$(MSBuildProjectName)', 'bin'))</OutDir>
 
-<!--	  
-	  <IntermediateOutputPath>$([MSBuild]::NormalizeDirectory('$(BuildOutDir)', '$(MSBuildProjectName)', 'obj'))</IntermediateOutputPath>
--->
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+
   </PropertyGroup>
 </Project>

@@ -12,13 +12,12 @@ namespace Momiji.Core.RTWorkQueue.Tasks;
 [TestClass]
 public class RTWorkQueueTasksTest : IDisposable
 {
-    private const int TIMES = 100;
-    private const int WAIT = 10;
+    private const int TIMES = 1000;
+    private const int SUB_TIMES = 10000;
 
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
-    private readonly RTWorkQueuePlatformEventsHandler _workQueuePlatformEventsHandler;
-    private readonly RTWorkQueueTaskSchedulerManager _workQueueTaskSchedulerManager;
+    private readonly IRTWorkQueueTaskSchedulerManager _workQueueTaskSchedulerManager;
 
     public RTWorkQueueTasksTest()
     {
@@ -41,15 +40,12 @@ public class RTWorkQueueTasksTest : IDisposable
 
         _logger = _loggerFactory.CreateLogger<RTWorkQueueTasksTest>();
 
-        _workQueuePlatformEventsHandler = new(_loggerFactory);
-        //_workQueueManager = new(configuration, _loggerFactory);
-        _workQueueTaskSchedulerManager = new(configuration, _loggerFactory);
+        _workQueueTaskSchedulerManager = new RTWorkQueueTaskSchedulerManager(configuration, _loggerFactory);
     }
 
     public void Dispose()
     {
         _workQueueTaskSchedulerManager?.Dispose();
-        _workQueuePlatformEventsHandler?.Dispose();
         _loggerFactory?.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -91,7 +87,12 @@ public class RTWorkQueueTasksTest : IDisposable
     )
     {
         list.Enqueue(($"action invoke {index} {value}", counter.ElapsedTicks));
-        Thread.CurrentThread.Join(WAIT);
+        for (var i = 0; i < SUB_TIMES; i++)
+        {
+            var a = 1;
+            var b = 2;
+            var _ = a * b * i;
+        }
         result[index] = value;
 
         if (cde != null)
@@ -145,6 +146,7 @@ public class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
+    [Timeout(5000)]
     [DataRow(false)]
     [DataRow(true)]
     public void TestLoopParallel(bool rtwqTaskScheduler)
@@ -169,6 +171,7 @@ public class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
+    [Timeout(5000)]
     [DataRow(false, ApartmentState.STA, ApartmentState.STA)]
     [DataRow(true, ApartmentState.STA, ApartmentState.STA)]
     [DataRow(false, ApartmentState.MTA, ApartmentState.STA)]
@@ -247,11 +250,23 @@ public class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
+    [Timeout(10000)]
     [DataRow(false, TIMES)]
-    [DataRow(true, TIMES)]
+    [DataRow(true, TIMES, "Pro Audio")]
+    [DataRow(true, TIMES, "Pro Audio", IRTWorkQueue.WorkQueueType.MultiThreaded)]
+    [DataRow(true, TIMES, "Pro Audio", IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow(true, TIMES, "Pro Audio", IRTWorkQueue.WorkQueueType.Window)]
     [DataRow(false, 1)]
     [DataRow(true, 1)]
-    public void TestDataflow(bool rtwqTaskScheduler, int maxDegreeOfParallelism)
+    public void TestDataflow(
+        bool rtwqTaskScheduler, 
+        int maxDegreeOfParallelism,
+        string usageClass = "",
+        IRTWorkQueue.WorkQueueType? type = null,
+        bool serial = false,
+        IRTWorkQueue.TaskPriority basePriority = IRTWorkQueue.TaskPriority.NORMAL,
+        int taskId = 0
+    )
     {
         var list = new ConcurrentQueue<(string, long)>();
         var result = new int[TIMES];
@@ -262,7 +277,7 @@ public class RTWorkQueueTasksTest : IDisposable
         var options = new ExecutionDataflowBlockOptions
         {
             MaxDegreeOfParallelism = maxDegreeOfParallelism,
-            TaskScheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default
+            TaskScheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler(usageClass, type, serial, basePriority, taskId) : TaskScheduler.Default
         };
 
         var block = new TransformBlock<int, int>(index => {
@@ -435,8 +450,8 @@ public class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [DataRow(false, TaskCreationOptions.None)]
-    [DataRow(true, TaskCreationOptions.None)]
+    [DataRow(false, TaskCreationOptions.DenyChildAttach)]
+    [DataRow(true, TaskCreationOptions.DenyChildAttach)]
     [DataRow(false, TaskCreationOptions.AttachedToParent)]
     [DataRow(true, TaskCreationOptions.AttachedToParent)]
     public async Task TestTaskFactoryStartNewAction2(
@@ -448,18 +463,23 @@ public class RTWorkQueueTasksTest : IDisposable
         var factory = new TaskFactory(CancellationToken.None, taskCreationOptionsParent, TaskContinuationOptions.None, scheduler);
 
         _logger.LogInformation("START 1");
-        await factory.StartNew(async () => {
+        var result = await await factory.StartNew(async () => {
             _logger.LogInformation("START 2");
-            await factory.StartNew(async () => {
+            var result = await await factory.StartNew(async () => {
                 _logger.LogInformation("START 3");
-                await factory.StartNew(async () => {
+                var result = await await factory.StartNew(async () => {
+                    _logger.LogInformation("START 4");
                     await Task.Delay(1);
+                    _logger.LogInformation("END 4");
+                    return 1;
                 });
-                _logger.LogInformation("END 3");
+                _logger.LogInformation($"END 3 {result}");
+                return result + 1;
             });
-            _logger.LogInformation("END 2");
+            _logger.LogInformation($"END 2 {result}");
+            return result + 1;
         });
-        _logger.LogInformation("END 1");
+        _logger.LogInformation($"END 1 {result}");
     }
 
     private async IAsyncEnumerable<int> GenerateAsync(
@@ -469,12 +489,13 @@ public class RTWorkQueueTasksTest : IDisposable
         var i = 0;
         while (!ct.IsCancellationRequested)
         {
+            await Task.Delay(0, ct);
             yield return i++;
-            await Task.Delay(1, ct);
         }
     }
 
     [TestMethod]
+    [Timeout(5000)]
     [DataRow(false)]
     [DataRow(true)]
     public async Task TestAsyncEnumerable(
@@ -488,7 +509,7 @@ public class RTWorkQueueTasksTest : IDisposable
 
         using var cts = new CancellationTokenSource();
 
-        var _ = Task.Delay(500).ContinueWith((task) => {
+        var _ = Task.Delay(50000).ContinueWith((task) => {
             _logger.LogInformation($"CANCEL {(double)counter.ElapsedTicks / 10_000}");
             cts.Cancel();
         });
@@ -497,11 +518,15 @@ public class RTWorkQueueTasksTest : IDisposable
         {
             counter.Reset();
             _logger.LogInformation($"START {(double)counter.ElapsedTicks / 10_000}");
-            await factory.StartNew(async () => {
+            await await factory.StartNew(async () => {
                 _logger.LogInformation($"TASK START {(double)counter.ElapsedTicks / 10_000}");
                 await foreach (var a in GenerateAsync(cts.Token))
                 {
                     _logger.LogInformation($"GENERATE {(double)counter.ElapsedTicks / 10_000} {a}");
+                    if (a >= TIMES)
+                    {
+                        break;
+                    }
                 }
                 _logger.LogInformation($"TASK END {(double)counter.ElapsedTicks / 10_000}");
             });
@@ -512,7 +537,7 @@ public class RTWorkQueueTasksTest : IDisposable
             _logger.LogInformation($"cancel {e}");
         }
 
-        await Task.Delay(5000);
+        //await Task.Delay(5000);
 
         _logger.LogInformation($"EXIT {(double)counter.ElapsedTicks / 10_000}");
     }

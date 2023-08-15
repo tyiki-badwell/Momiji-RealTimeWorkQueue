@@ -437,21 +437,7 @@ internal partial class RTWorkQueue : IRTWorkQueue
     {
         CheckShutdown();
 
-        var asyncResult = _parent.GetAsyncResult(0, WorkQueueId, action, null, afterAction);
-        PutWorkItemCore(priority, asyncResult, ct);
-    }
-
-    public void PutWorkItem<TState>(
-        IRTWorkQueue.TaskPriority priority,
-        Action<TState?> action,
-        TState? state,
-        Action<Exception?, CancellationToken>? afterAction = default,
-        CancellationToken ct = default
-    )
-    {
-        CheckShutdown();
-
-        var asyncResult = _parent.GetAsyncResult(0, WorkQueueId, action, state, afterAction);
+        var asyncResult = _parent.GetAsyncResult(0, WorkQueueId, action, afterAction);
         PutWorkItemCore(priority, asyncResult, ct);
     }
 
@@ -487,18 +473,6 @@ internal partial class RTWorkQueue : IRTWorkQueue
     {
         return _parent.ToAsync(
             afterAction_ => PutWorkItem(priority, action, afterAction_, ct)
-        );
-    }
-
-    public Task PutWorkItemAsync<TState>(
-        IRTWorkQueue.TaskPriority priority,
-        Action<TState?> action, 
-        TState? state,
-        CancellationToken ct = default
-    )
-    {
-        return _parent.ToAsync(
-            afterAction_ => PutWorkItem(priority, action, state, afterAction_, ct)
         );
     }
 }

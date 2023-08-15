@@ -12,13 +12,13 @@ namespace Momiji.Core.RTWorkQueue;
 [TestClass]
 public class RTWorkQueueTest : IDisposable
 {
-    private const int TIMES = 100;
-    private const int WAIT = 10;
+    private const int TIMES = 1000;
+    private const int SUB_TIMES = 1000;
 
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
-    private readonly RTWorkQueuePlatformEventsHandler _workQueuePlatformEventsHandler;
-    private readonly RTWorkQueueManager _workQueueManager;
+    private readonly IRTWorkQueuePlatformEventsHandler _workQueuePlatformEventsHandler;
+    private readonly IRTWorkQueueManager _workQueueManager;
 
     public RTWorkQueueTest()
     {
@@ -30,7 +30,7 @@ public class RTWorkQueueTest : IDisposable
 
             builder.AddFilter("Momiji", LogLevel.Warning);
             builder.AddFilter("Momiji.Core.Cache", LogLevel.Information);
-            builder.AddFilter("Momiji.Core.RTWorkQueue", LogLevel.Trace);
+            builder.AddFilter("Momiji.Core.RTWorkQueue", LogLevel.Information);
             builder.AddFilter("Microsoft", LogLevel.Warning);
             builder.AddFilter("System", LogLevel.Warning);
 
@@ -40,8 +40,8 @@ public class RTWorkQueueTest : IDisposable
 
         _logger = _loggerFactory.CreateLogger<RTWorkQueueTest>();
 
-        _workQueuePlatformEventsHandler = new(_loggerFactory);
-        _workQueueManager = new(configuration, _loggerFactory);
+        _workQueuePlatformEventsHandler = new RTWorkQueuePlatformEventsHandler(_loggerFactory);
+        _workQueueManager = new RTWorkQueueManager(configuration, _loggerFactory);
     }
 
     public void Dispose()
@@ -87,7 +87,14 @@ public class RTWorkQueueTest : IDisposable
     )
     {
         list.Enqueue(($"action invoke {id}", counter.ElapsedTicks));
-        Thread.CurrentThread.Join(WAIT);
+
+        for (var i = 0; i < SUB_TIMES; i++)
+        {
+            var a = 1;
+            var b = 2;
+            var _ = a * b * i;
+        }
+
         if (cde != null)
         {
             if (!cde.IsSet)
@@ -404,7 +411,6 @@ public class RTWorkQueueTest : IDisposable
                             throw new Exception($"error {j}");
                         }
                         TestTask(counter, list, j);
-                        cde.Signal();
                     },
                     (e, ct) =>
                     {
@@ -1112,6 +1118,7 @@ public class RTWorkQueueTest : IDisposable
     }
 
     [TestMethod]
+    [Timeout(5000)]
     [DataRow("Pro Audio", 0, false, false, false)] //Fire
     [DataRow("Pro Audio", -1, false, false, false)] //Fire
     [DataRow("Pro Audio", -100, true, false, false)] //Cancel
@@ -1167,7 +1174,7 @@ public class RTWorkQueueTest : IDisposable
 
         try
         {
-            await task;
+            await task.ConfigureAwait(false);
 
             _logger.LogInformation($"result {result} {counter.ElapsedTicks}");
 
@@ -1216,22 +1223,97 @@ public class RTWorkQueueTest : IDisposable
     }
 
     [TestMethod]
-    public async Task TestRegisterWorkQueueWithMMCSS()
+    [DataRow("", "")]
+    [DataRow("Audio", "Audio")]
+    [DataRow("Audio", "Pro Audio")]
+    [DataRow("", "Pro Audio", IRTWorkQueue.WorkQueueType.MultiThreaded)]
+    public async Task TestRegisterWorkQueueWithMMCSS(
+        string usageClass1,
+        string usageClass2,
+        IRTWorkQueue.WorkQueueType? type = null,
+        bool serial = false,
+        bool argumentException = false
+    )
     {
-        var usageClass = "Audio";
+        using var workQueue =
+            (type != null)
+                ? _workQueueManager.CreatePrivateWorkQueue((IRTWorkQueue.WorkQueueType)type)
+                : _workQueueManager.CreatePlatformWorkQueue(usageClass1)
+                ;
 
-        using var workQueue = _workQueueManager.CreatePlatformWorkQueue(usageClass);
-        Assert.AreEqual(usageClass, workQueue.GetMMCSSClass());
+        Assert.AreEqual(usageClass1, workQueue.GetMMCSSClass());
+        Assert.AreEqual(IRTWorkQueue.TaskPriority.NORMAL, workQueue.GetMMCSSPriority());
 
-        await workQueue.UnregisterMMCSSAsync();
+        try
+        {
+            var taskId = workQueue.GetMMCSSTaskId();
+            if (usageClass1 == "")
+            {
+                //class指定が無いときは、task idを取り出すとE_FAILになる
+                Assert.Fail();
+            }
+        }
+        catch (COMException)
+        {
+            if (usageClass1 != "")
+            {
+                //class指定が無いときは、task idを取り出すとE_FAILになる
+                Assert.Fail();
+            }
+        }
+
+        try
+        {
+            await workQueue.UnregisterMMCSSAsync();
+            if (usageClass1 == "")
+            {
+                //class指定が無いときは、0xC00D36B6(E_NOT_INITIALIZED)になる
+                Assert.Fail();
+            }
+        }
+        catch (COMException)
+        {
+            if (usageClass1 != "")
+            {
+                //class指定が無いときは、0xC00D36B6(E_NOT_INITIALIZED)になる
+                Assert.Fail();
+            }
+        }
 
         Assert.AreEqual("", workQueue.GetMMCSSClass());
+        Assert.AreEqual(IRTWorkQueue.TaskPriority.NORMAL, workQueue.GetMMCSSPriority());
 
-        usageClass = "Pro Audio";
-        await workQueue.RegisterMMCSSAsync(usageClass, IRTWorkQueue.TaskPriority.HIGH, 1);
+        try
+        {
+            workQueue.GetMMCSSTaskId();
+        }
+        catch (COMException)
+        {
+            //Unregister後はE_FAILになる
+        }
 
-        Assert.AreEqual(usageClass, workQueue.GetMMCSSClass());
-        Assert.AreEqual(IRTWorkQueue.TaskPriority.HIGH, workQueue.GetMMCSSPriority());
+        try
+        {
+            await workQueue.RegisterMMCSSAsync(usageClass2, IRTWorkQueue.TaskPriority.HIGH, 1);
+            if (usageClass2 == "")
+            {
+                //class指定が無いときは、0x8007060E(ERROR_INVALID_TASK_NAME)になる
+                Assert.Fail();
+            }
+
+            Assert.AreEqual(usageClass2, workQueue.GetMMCSSClass());
+            Assert.AreEqual(IRTWorkQueue.TaskPriority.HIGH, workQueue.GetMMCSSPriority());
+            Assert.AreNotEqual(0, workQueue.GetMMCSSTaskId());
+        }
+        catch (COMException)
+        {
+            if (usageClass2 != "")
+            {
+                //class指定が無いときは、0x8007060E(ERROR_INVALID_TASK_NAME)になる
+                Assert.Fail();
+            }
+        }
+
 
     }
 

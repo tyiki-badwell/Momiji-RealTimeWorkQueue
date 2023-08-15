@@ -8,7 +8,7 @@ internal static class Libraries
     public const string Kernel32 = "kernel32.dll";
 }
 
-internal static class NativeMethods
+internal static partial class NativeMethods
 {
     [Flags]
     public enum BASE_SEARCH_PATH : uint
@@ -18,18 +18,18 @@ internal static class NativeMethods
         PERMANENT = 0x00008000
     }
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool SetSearchPathMode(
-        [In] BASE_SEARCH_PATH Flags
+    internal static partial bool SetSearchPathMode(
+        BASE_SEARCH_PATH Flags
     );
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool SetDllDirectoryW(
-        [In][MarshalAs(UnmanagedType.LPWStr)] string lpPathName
+    internal static partial bool SetDllDirectoryW(
+        [MarshalAs(UnmanagedType.LPWStr)] string lpPathName
     );
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -48,19 +48,19 @@ internal static class NativeMethods
         public ushort wProcessorRevision;
     }
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern void GetNativeSystemInfo(
-        [In] ref SYSTEM_INFO lpSystemInfo
+    internal static partial void GetNativeSystemInfo(
+        ref SYSTEM_INFO lpSystemInfo
     );
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool IsWow64Process2(
-        [In] nint hProcess,
-        [Out] out ushort pProcessMachine,
-        [Out] out ushort pNativeMachine
+    internal static partial bool IsWow64Process2(
+        nint hProcess,
+        out ushort pProcessMachine,
+        out ushort pNativeMachine
     );
 
     [Flags]
@@ -72,9 +72,9 @@ internal static class NativeMethods
         Optout
     }
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern DEP_SYSTEM_POLICY_TYPE GetSystemDEPPolicy();
+    internal static partial DEP_SYSTEM_POLICY_TYPE GetSystemDEPPolicy();
 
     [Flags]
     public enum PROCESS_DEP : uint
@@ -84,26 +84,26 @@ internal static class NativeMethods
         DISABLE_ATL_THUNK_EMULATION = 2
     }
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool GetProcessDEPPolicy(
-        [In] nint hProcess,
-        [Out] out PROCESS_DEP lpFlags,
-        [Out][MarshalAs(UnmanagedType.Bool)] out bool lpPermanent
+    internal static partial bool GetProcessDEPPolicy(
+        nint hProcess,
+        out PROCESS_DEP lpFlags,
+        [MarshalAs(UnmanagedType.Bool)] out bool lpPermanent
     );
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool SetProcessDEPPolicy(
-        [In] PROCESS_DEP dwFlags
+    internal static partial bool SetProcessDEPPolicy(
+        PROCESS_DEP dwFlags
     );
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern nint GetModuleHandleW(
-        [In][MarshalAs(UnmanagedType.LPWStr)] string? lpModuleName
+    internal static partial nint GetModuleHandleW(
+        [MarshalAs(UnmanagedType.LPWStr)] string? lpModuleName
     );
 
     internal static class WAITABLE_TIMER
@@ -131,53 +131,86 @@ internal static class NativeMethods
         }
     }
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern SafeWaitHandle CreateWaitableTimerW(
-        [In, Optional] nint lpTimerAttributes,
-        [In][MarshalAs(UnmanagedType.Bool)] bool bManualReset,
-        [In, Optional] nint lpTimerName
+    internal static partial SafeWaitHandle CreateWaitableTimerW(
+        [Optional] nint lpTimerAttributes,
+        [MarshalAs(UnmanagedType.Bool)] bool bManualReset,
+        [Optional] nint lpTimerName
     );
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern SafeWaitHandle CreateWaitableTimerExW(
-        [In, Optional] nint lpTimerAttributes,
-        [In, Optional][MarshalAs(UnmanagedType.LPWStr)] string? lpTimerName,
-        [In] WAITABLE_TIMER.FLAGS dwFlags,
-        [In] WAITABLE_TIMER.ACCESS_MASK dwDesiredAccess
+    internal static partial SafeWaitHandle CreateWaitableTimerExW(
+        [Optional] nint lpTimerAttributes,
+        [Optional][MarshalAs(UnmanagedType.LPWStr)] string? lpTimerName,
+        WAITABLE_TIMER.FLAGS dwFlags,
+        WAITABLE_TIMER.ACCESS_MASK dwDesiredAccess
     );
-
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+}
+internal static partial class NativeMethods
+{
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool SetWaitableTimerEx(
-        [In] this SafeWaitHandle hTimer,
-        [In] ref long lpDueTime,
-        [In] int lPeriod,
-        [In, Optional] nint pfnCompletionRoutine,
-        [In, Optional] nint lpArgToCompletionRoutine,
-        [In, Optional] nint WakeContext,
-        [In] uint TolerableDelay
+    internal static partial bool SetWaitableTimerEx(
+        SafeWaitHandle hTimer,
+        ref long lpDueTime,
+        int lPeriod,
+        [Optional] nint pfnCompletionRoutine,
+        [Optional] nint lpArgToCompletionRoutine,
+        [Optional] nint WakeContext,
+        uint TolerableDelay
     );
+}
+internal static partial class NativeMethodsExtensions
+{
+    internal static bool SetWaitableTimerEx(
+        this SafeWaitHandle hTimer,
+        ref long lpDueTime,
+        int lPeriod,
+        [Optional] nint pfnCompletionRoutine,
+        [Optional] nint lpArgToCompletionRoutine,
+        [Optional] nint WakeContext,
+        uint TolerableDelay
+    )
+    {
+        return NativeMethods.SetWaitableTimerEx(hTimer, ref lpDueTime, lPeriod, pfnCompletionRoutine, lpArgToCompletionRoutine, WakeContext, TolerableDelay);
+    }
+}
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+internal static partial class NativeMethods
+{
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int WaitForSingleObject(
-        [In] this SafeWaitHandle hTimer,
-        [In] uint dwMilliseconds
+    internal static partial int WaitForSingleObject(
+        SafeWaitHandle hTimer,
+        uint dwMilliseconds
     );
+}
+internal static partial class NativeMethodsExtensions
+{
+    internal static int WaitForSingleObject(
+        this SafeWaitHandle hTimer,
+        uint dwMilliseconds
+    )
+    {
+        return NativeMethods.WaitForSingleObject(hTimer, dwMilliseconds);
+    }
+}
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+internal static partial class NativeMethods
+{
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool CloseHandle(
-        [In] nint hObject
+    internal static partial bool CloseHandle(
+        nint hObject
     );
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern int GetCurrentThreadId();
+    internal static partial int GetCurrentThreadId();
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct STARTUPINFOW
@@ -224,20 +257,22 @@ internal static class NativeMethods
         public nint hStdError;
     }
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static extern void GetStartupInfoW(ref STARTUPINFOW lpStartupInfo);
+    internal static partial void GetStartupInfoW(
+        ref STARTUPINFOW lpStartupInfo
+    );
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true, CharSet = CharSet.Unicode)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static unsafe extern uint FormatMessageW(
-        [In] uint dwFlags,
-        [In] nint lpSource,
-        [In] int dwMessageId,
-        [In] uint dwLanguageId,
-        [In] char* pszText,
-        [In] uint nSize,
-        [In] nint Arguments
+    internal static unsafe partial uint FormatMessageW(
+        uint dwFlags,
+        nint lpSource,
+        int dwMessageId,
+        uint dwLanguageId,
+        char* pszText,
+        uint nSize,
+        nint Arguments
     );
 
     public enum PROCESS_INFORMATION_CLASS : uint
@@ -287,14 +322,14 @@ internal static class NativeMethods
         public PROCESS_POWER_THROTTLING StateMask;
     }
 
-    [DllImport(Libraries.Kernel32, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true)]
+    [LibraryImport(Libraries.Kernel32, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool GetProcessInformation(
-        [In] nint hProcess,
-        [In] PROCESS_INFORMATION_CLASS ProcessInformationClass,
-        [In] nint ProcessInformation,
-        [In] int ProcessInformationSize
+    internal static partial bool GetProcessInformation(
+        nint hProcess,
+        PROCESS_INFORMATION_CLASS ProcessInformationClass,
+        nint ProcessInformation,
+        int ProcessInformationSize
     );
 
 }

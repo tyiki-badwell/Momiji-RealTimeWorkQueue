@@ -12,7 +12,7 @@ public class ThreadDebug
         var logger = loggerFactory.CreateLogger<ThreadDebug>();
         {
             var guid = typeof(Ole32.IComThreadingInfo).GUID;
-            var result = Ole32.CoGetObjectContext(ref guid, out var ppv);
+            var result = Ole32.CoGetObjectContext(in guid, out var ppv);
             logger.LogInformation($"CoGetObjectContext {result}");
 
             if (ppv is Ole32.IComThreadingInfo comThreadingInfo)
@@ -26,7 +26,7 @@ public class ThreadDebug
 
         {
             var guid = typeof(Ole32.IContext).GUID;
-            var result = Ole32.CoGetObjectContext(ref guid, out var ppv);
+            var result = Ole32.CoGetObjectContext(in guid, out var ppv);
             logger.LogInformation($"CoGetObjectContext {result}");
 
             if (ppv is Ole32.IContext context)

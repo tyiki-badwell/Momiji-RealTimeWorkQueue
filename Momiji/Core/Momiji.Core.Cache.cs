@@ -102,7 +102,7 @@ public abstract class PoolValue<TParam> : IDisposable
     protected abstract void CancelCore(bool ignore);
 }
 
-public class Pool<TKey, TValue, TParam> : IDisposable
+public class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
     where TKey : notnull
     where TValue : notnull, PoolValue<TParam>
 {
@@ -185,37 +185,53 @@ public class Pool<TKey, TValue, TParam> : IDisposable
 
         if (disposing)
         {
-            _logger.LogDebug($"busy items {_busy.Count}");
-
-            while (!_busy.IsEmpty)
-            {
-                foreach (var key in _busy.Keys)
-                {
-                    _logger.LogDebug($"try cancel busy key {key}");
-                    if (_busy.TryGetValue(key, out var result))
-                    {
-                        _logger.LogDebug($"{key} {result.Status}");
-                        result.Cancel();
-                    }
-                }
-
-                _logger.LogDebug($"wait ...");
-                Task.Delay(10).Wait();
-            }
-
-            _logger.LogDebug($"avail items {_avail.Count}");
-            _logger.LogDebug($"cache items {_cache.Count}");
-
-            _avail.Clear();
-
-            while (_cache.TryPop(out var result))
-            {
-                result.Item2.Dispose();
-            }
-            _cache.Clear();
+            DisposeAsyncCore().AsTask().Wait();
         }
 
         _disposed = true;
     }
 
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore().ConfigureAwait(false);
+
+        Dispose(false);
+
+        GC.SuppressFinalize(this);
+    }
+
+    protected async virtual ValueTask DisposeAsyncCore()
+    {
+        _logger.LogTrace("DisposeAsync start");
+
+        _logger.LogDebug($"busy items {_busy.Count}");
+
+        while (!_busy.IsEmpty)
+        {
+            foreach (var key in _busy.Keys)
+            {
+                _logger.LogDebug($"try cancel busy key {key}");
+                if (_busy.TryGetValue(key, out var result))
+                {
+                    _logger.LogDebug($"{key} {result.Status}");
+                    result.Cancel();
+                }
+            }
+
+            _logger.LogDebug($"wait ...");
+            await Task.Delay(10).ConfigureAwait(false);
+        }
+
+        _logger.LogDebug($"avail items {_avail.Count}");
+        _logger.LogDebug($"cache items {_cache.Count}");
+
+        _avail.Clear();
+
+        while (_cache.TryPop(out var result))
+        {
+            result.Item2.Dispose();
+        }
+        _cache.Clear();
+        _logger.LogTrace("DisposeAsync end");
+    }
 }

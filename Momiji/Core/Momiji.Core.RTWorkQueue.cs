@@ -6,7 +6,7 @@ public interface IRTWorkQueuePlatformEventsHandler : IDisposable
 {
 }
 
-public interface IRTWorkQueueTaskSchedulerManager : IDisposable
+public interface IRTWorkQueueTaskSchedulerManager : IDisposable, IAsyncDisposable
 {
     public TaskScheduler GetTaskScheduler(
         string usageClass = "",
@@ -21,7 +21,7 @@ public interface IRTWorkQueueTaskSchedulerManager : IDisposable
     );
 }
 
-public interface IRTWorkQueueManager : IDisposable
+public interface IRTWorkQueueManager : IDisposable, IAsyncDisposable
 {
     public IRTWorkQueue CreatePlatformWorkQueue(
         string usageClass = "",
@@ -36,19 +36,18 @@ public interface IRTWorkQueueManager : IDisposable
         IRTWorkQueue workQueue
     );
 
+    public void RegisterMMCSS(
+        string usageClass,
+        IRTWorkQueue.TaskPriority basePriority = IRTWorkQueue.TaskPriority.NORMAL,
+        int taskId = 0
+    );
+
+    public void UnregisterMMCSS();
+
     public void PutWaitingWorkItem(
         IRTWorkQueue.TaskPriority priority,
         WaitHandle waitHandle,
         Action action,
-        Action<Exception?, CancellationToken>? afterAction = default,
-        CancellationToken ct = default
-    );
-
-    public void PutWaitingWorkItem<TState>(
-        IRTWorkQueue.TaskPriority priority,
-        WaitHandle waitHandle,
-        Action<TState?> action,
-        TState? state,
         Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     );
@@ -67,33 +66,14 @@ public interface IRTWorkQueueManager : IDisposable
         CancellationToken ct = default
     );
 
-    public void ScheduleWorkItem<TState>(
-        long timeout,
-        Action<TState?> action,
-        TState? state = default,
-        Action<Exception?, CancellationToken>? afterAction = default,
-        CancellationToken ct = default
-    );
-
-    public Task PutWaitingWorkItemAsync<TState>(
-        IRTWorkQueue.TaskPriority priority,
-        WaitHandle waitHandle,
-        Action<TState?> action,
-        TState? state = default,
-        CancellationToken ct = default
-    );
-
     public Task ScheduleWorkItemAsync(
         long timeout,
         Action action,
         CancellationToken ct = default
     );
 
-    public Task ScheduleWorkItemAsync<TState>(
-        long timeout,
-        Action<TState?> action,
-        TState? state = default,
-        CancellationToken ct = default
+    public IDisposable AddPeriodicCallback(
+        Action action
     );
 }
 
@@ -121,23 +101,9 @@ public interface IRTWorkQueue : IDisposable
         CancellationToken ct = default
     );
 
-    public void PutWorkItem<TState>(
-        TaskPriority priority,
-        Action<TState?> action,
-        TState? state,
-        Action<Exception?, CancellationToken>? afterAction = default,
-        CancellationToken ct = default
-    );
-
     public Task PutWorkItemAsync(
         TaskPriority priority,
         Action action, 
-        CancellationToken ct = default
-    );
-    public Task PutWorkItemAsync<TState>(
-        TaskPriority priority,
-        Action<TState?> action,
-        TState? state,
         CancellationToken ct = default
     );
 

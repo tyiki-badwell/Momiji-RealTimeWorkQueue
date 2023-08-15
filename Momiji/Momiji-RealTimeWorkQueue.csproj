@@ -7,7 +7,7 @@
     <Platforms>AnyCPU</Platforms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <SignAssembly>False</SignAssembly>
+    <SignAssembly>false</SignAssembly>
     <PackageId>Momiji.RealTimeWorkQueue</PackageId>
     <Version>0.0.1-alpha.2</Version>
     <Authors>tyiki-badwell</Authors>
@@ -19,7 +19,7 @@
     <PackageTags>RTWQ;TaskScheduler;</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
   </PropertyGroup>
 
   <ItemGroup>

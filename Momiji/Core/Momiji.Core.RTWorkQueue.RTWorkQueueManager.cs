@@ -204,7 +204,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
         if (disposing)
         {
-            _pool.Dispose();
+            DisposeAsyncCore().AsTask().Wait();
         }
 
         if (_param.TaskId != 0)
@@ -243,6 +243,22 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         _logger.LogDebug($"Dispose end {CreatedApartmentType} / current:{apartmentType}");
     }
 
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore().ConfigureAwait(false);
+
+        Dispose(false);
+
+        GC.SuppressFinalize(this);
+    }
+
+    protected async virtual ValueTask DisposeAsyncCore()
+    {
+        _logger.LogTrace("DisposeAsync start");
+        await _pool.DisposeAsync().ConfigureAwait(false);
+        _logger.LogTrace("DisposeAsync end");
+    }
+
     private void CheckShutdown()
     {
         if (_shutdown)
@@ -259,16 +275,16 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     internal RTWorkQueueAsyncResultPoolValue GetAsyncResult(
         uint flags,
         RTWorkQ.WorkQueueId queue,
-        Delegate action,
-        object? state = default,
-        Action<Exception?, CancellationToken>? afterAction = default
+        Action action,
+        Action<Exception?, CancellationToken>? afterAction = default,
+        bool completeOnCancel = false
     )
     {
         CheckShutdown();
 
         var asyncResult = _pool.Get();
 
-        asyncResult.Initialize(flags, queue, action, state, afterAction);
+        asyncResult.Initialize(flags, queue, action, afterAction, completeOnCancel);
 
         _logger.LogTrace($"GetAsyncResult Id:{asyncResult.Id}");
         return asyncResult;
@@ -441,7 +457,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         }
     }
 
-    public RTWorkQueuePeriodicCallback AddPeriodicCallback(
+    public IDisposable AddPeriodicCallback(
         Action action    
     )
     {
@@ -462,20 +478,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         CancellationToken ct = default
     )
     {
-        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, null, afterAction);
-        PutWaitingWorkItemCore(priority, waitHandle, asyncResult, ct);
-    }
-
-    public void PutWaitingWorkItem<TState>(
-        IRTWorkQueue.TaskPriority priority,
-        WaitHandle waitHandle,
-        Action<TState?> action,
-        TState? state,
-        Action<Exception?, CancellationToken>? afterAction = default,
-        CancellationToken ct = default
-    )
-    {
-        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, state, afterAction);
+        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, afterAction);
         PutWaitingWorkItemCore(priority, waitHandle, asyncResult, ct);
     }
 
@@ -519,19 +522,6 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         );
     }
 
-    public Task PutWaitingWorkItemAsync<TState>(
-        IRTWorkQueue.TaskPriority priority,
-        WaitHandle waitHandle,
-        Action<TState?> action,
-        TState? state = default,
-        CancellationToken ct = default
-    )
-    {
-        return ToAsync(
-            afterAction_ => PutWaitingWorkItem(priority, waitHandle, action, state, afterAction_, ct)
-        );
-    }
-
     internal Task ToAsync(
         Action<Action<Exception?, CancellationToken>?> action
     )
@@ -569,19 +559,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         CancellationToken ct = default
     )
     {
-        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, null, afterAction);
-        ScheduleWorkItemCore(timeout, asyncResult, ct);
-    }
-
-    public void ScheduleWorkItem<TState>(
-        long timeout,
-        Action<TState?> action,
-        TState? state = default,
-        Action<Exception?, CancellationToken>? afterAction = default,
-        CancellationToken ct = default
-    )
-    {
-        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, state, afterAction);
+        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, afterAction, true);
         ScheduleWorkItemCore(timeout, asyncResult, ct);
     }
 
@@ -618,18 +596,6 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     {
         return ToAsync(
             afterAction_ => ScheduleWorkItem(timeout, action, afterAction_, ct)
-        );
-    }
-
-    public Task ScheduleWorkItemAsync<TState>(
-        long timeout,
-        Action<TState?> action,
-        TState? state = default,
-        CancellationToken ct = default
-    )
-    {
-        return ToAsync(
-            afterAction_ => ScheduleWorkItem(timeout, action, state, afterAction_, ct)
         );
     }
 }

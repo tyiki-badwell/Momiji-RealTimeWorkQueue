@@ -13,24 +13,27 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<RTWorkQueueAsyncResultPoolValue> _logger;
     private bool _disposed;
-    internal RTWorkQ.IRtwqAsyncResult _rtwqAsyncResult;
+    internal RTWorkQ.IRtwqAsyncResult? _rtwqAsyncResult;
     internal RTWorkQ.IRtwqAsyncCallback _rtwqAsyncCallback;
     internal ApartmentType CreatedApartmentType { get; init; }
 
-    internal RTWorkQ.IRtwqAsyncResult RtwqAsyncResult => _rtwqAsyncResult;
+    internal RTWorkQ.IRtwqAsyncResult RtwqAsyncResult => _rtwqAsyncResult!;
     internal uint Id { get; init; }
 
     private readonly RTWorkQueueManager _parent;
 
+    //GetParameters
     private uint _flags;
     private RTWorkQ.WorkQueueId _workQueueId;
-    private Delegate? _action;
-    private object? _state;
+
+    private Action? _action;
     
     private RTWorkQ.RtWorkItemKey _key;
     private CancellationToken _ct;
 
     private Action<Exception?, CancellationToken>? _afterAction;
+
+    private bool _completeOnCancel = false;
 
     [ClassInterface(ClassInterfaceType.None)]
     [GeneratedComClass]
@@ -113,6 +116,8 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
                     _logger.LogTrace($"FinalReleaseComObject {count} {Id}");
                 });
                 */
+
+                _rtwqAsyncResult = null;
             }
 
             _disposed = true;
@@ -123,9 +128,9 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
     internal void Initialize(
         uint flags,
         RTWorkQ.WorkQueueId queue,
-        Delegate action,
-        object? state = null, 
-        Action<Exception?, CancellationToken>? afterAction = default
+        Action action,
+        Action<Exception?, CancellationToken>? afterAction = default,
+        bool completeOnCancel = false
     )
     {
         _key = RTWorkQ.RtWorkItemKey.None;
@@ -136,8 +141,8 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         _flags = flags;
         _workQueueId = queue;
         _action = action;
-        _state = state;
         _afterAction = afterAction;
+        _completeOnCancel = completeOnCancel;
     }
 
     protected override void InvokeCore(RTWorkQ.IRtwqAsyncResult asyncResult, bool ignore)
@@ -146,7 +151,7 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
 
         _logger.LogTrace($"RtwqAsyncCallback.Invoke Id:{Id} {CreatedApartmentType} {Status} / {apartmentType}");
 
-        if (ignore)
+        if (ignore && _completeOnCancel)
         {
             _logger.LogTrace($"RtwqAsyncCallback.Invoke skip Id:{Id} {CreatedApartmentType}");
             return;
@@ -157,13 +162,24 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
 
         try
         {
-            _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType}");
-            InvokeAction();
-            _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType} ok.");
-            RanToCompletion();
+            if (!ignore)
+            {
+                _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType}");
+                _action?.Invoke();
+                _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType} ok.");
+                RanToCompletion();
+                RtwqAsyncResult.SetStatus(0);
+            }
+            else
+            {
+                _logger.LogTrace($"canceled Id:{Id} {CreatedApartmentType}");
 
-            //TODO Ajailになってないらしい？　STAから呼ぶと失敗、MAINSTAは成功する。　setしても使ってないので、不要にする？
-            RtwqAsyncResult.SetStatus(0);
+                Canceled();
+
+                RtwqAsyncResult.SetStatus(
+                    unchecked((int)0x80004004) // E_ABORT
+                );
+            }
         }
         catch (Exception e)
         {
@@ -176,11 +192,10 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
             );
         }
 
-        //TODO 続きはRtwqInvokeCallbackが良いか？
         try
         {
             _logger.LogTrace("afterAction.Invoke");
-            afterAction?.Invoke(error, CancellationToken.None);
+            afterAction?.Invoke(error, ignore ? _ct : CancellationToken.None);
         }
         catch (Exception e)
         {
@@ -189,24 +204,6 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         finally
         {
             _parent.ReleaseAsyncResult(this);
-        }
-    }
-
-    private void InvokeAction()
-    {
-        {
-            if (_action is Action action)
-            {
-                action.Invoke();
-                return;
-            }
-        }
-        {
-            if (_action is Action<object?> action)
-            {
-                action.Invoke(_state);
-                return;
-            }
         }
     }
 
@@ -235,11 +232,16 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
                 _logger.LogTrace($"RtwqCancelWorkItem Id:{Id} {CreatedApartmentType} {_key.Key} ok.");
             }
 
-            Canceled();
+            if (_completeOnCancel)
+            {
+                _logger.LogTrace($"canceled Id:{Id} {CreatedApartmentType}");
 
-            RtwqAsyncResult.SetStatus(
-                unchecked((int)0x80004004) // E_ABORT
-            );
+                Canceled();
+
+                RtwqAsyncResult.SetStatus(
+                    unchecked((int)0x80004004) // E_ABORT
+                );
+            }
         }
         catch (COMException e) when (e.HResult == unchecked((int)0xC00D36D5)) //E_NOT_FOUND
         {
@@ -255,19 +257,21 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
             );
         }
 
-        //TODO 続きはRtwqInvokeCallbackが良いか？
-        try
+        if (_completeOnCancel)
         {
-            _logger.LogTrace("afterAction.Invoke");
-            afterAction?.Invoke(null, _ct);
-        }
-        catch (Exception e)
-        {
-            _logger.LogError(e, $"afterAction.Invoke failed Id:{Id} {CreatedApartmentType} {_key.Key}.");
-        }
-        finally
-        {
-            _parent.ReleaseAsyncResult(this);
+            try
+            {
+                _logger.LogTrace("afterAction.Invoke");
+                afterAction?.Invoke(null, _ct);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, $"afterAction.Invoke failed Id:{Id} {CreatedApartmentType} {_key.Key}.");
+            }
+            finally
+            {
+                _parent.ReleaseAsyncResult(this);
+            }
         }
     }
 
