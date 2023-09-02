@@ -449,7 +449,7 @@ internal partial class RTWorkQueue : IRTWorkQueue
     {
         try
         {
-            _logger.LogTrace($"PutWorkItem Id:{asyncResult.Id} {asyncResult.CreatedApartmentType}");
+            _logger.LogTrace($"PutWorkItem Id:[{asyncResult.Id}] {asyncResult.CreatedApartmentType}");
             asyncResult.WaitingToRun();
             asyncResult.BindCancellationToken(RTWorkQ.RtWorkItemKey.None, ct);
 

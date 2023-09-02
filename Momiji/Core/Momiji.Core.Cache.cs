@@ -43,7 +43,7 @@ public abstract class PoolValue<TParam> : IDisposable
 
     protected abstract void Dispose(bool disposing);
 
-    internal void Free()
+    internal virtual void Free()
     {
         Status = PoolValueStatus.Free;
     }
@@ -135,7 +135,7 @@ public class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
             item = Add();
         }
 
-        _logger.LogTrace($"busy {item.Item1}");
+        _logger.LogTrace($"busy Id:[{item.Item1}]");
         _busy.TryAdd(item.Item1, item.Item2);
         item.Item2.Rent();
 
@@ -145,7 +145,7 @@ public class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
     private (TKey, TValue) Add()
     {
         var (key, value) = _allocator();
-        _logger.LogTrace($"create {key}");
+        _logger.LogTrace($"create Id:[{key}]");
         _cache.Push((key, value));
 
         return (key, value);
@@ -155,13 +155,13 @@ public class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
     {
         if (_busy.TryRemove(key, out var value))
         {
-            _logger.LogTrace($"release {key}");
-            _avail.Push((key, value));
+            _logger.LogTrace($"release Id:[{key}]");
             value.Free();
+            _avail.Push((key, value));
         }
         else
         {
-            _logger.LogWarning($"not busy {key}");
+            _logger.LogWarning($"not busy Id:[{key}]");
         }
     }
 
@@ -206,14 +206,14 @@ public class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
 
         _logger.LogDebug($"busy items {_busy.Count}");
 
-        while (!_busy.IsEmpty)
+        while (IsBusy())
         {
             foreach (var key in _busy.Keys)
             {
-                _logger.LogDebug($"try cancel busy key {key}");
+                _logger.LogDebug($"try cancel busy key Id:[{key}]");
                 if (_busy.TryGetValue(key, out var result))
                 {
-                    _logger.LogDebug($"{key} {result.Status}");
+                    _logger.LogDebug($"Id:[{key}] {result.Status}");
                     result.Cancel();
                 }
             }
@@ -233,5 +233,10 @@ public class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
         }
         _cache.Clear();
         _logger.LogTrace("DisposeAsync end");
+    }
+
+    public bool IsBusy()
+    {
+        return !_busy.IsEmpty;
     }
 }

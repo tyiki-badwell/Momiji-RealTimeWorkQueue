@@ -116,6 +116,8 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
     private readonly Pool<uint, RTWorkQueueAsyncResultPoolValue, RTWorkQ.IRtwqAsyncResult> _pool;
 
+    public bool IsBusy() => _pool.IsBusy();
+
     private uint _asyncResultId = 0;
 
     private bool _shutdown;
@@ -286,13 +288,13 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
         asyncResult.Initialize(flags, queue, action, afterAction, completeOnCancel);
 
-        _logger.LogTrace($"GetAsyncResult Id:{asyncResult.Id}");
+        _logger.LogTrace($"GetAsyncResult Id:[{asyncResult.Id}]");
         return asyncResult;
     }
 
     internal void ReleaseAsyncResult(RTWorkQueueAsyncResultPoolValue asyncResult)
     {
-        _logger.LogTrace($"ReleaseAsyncResult Id:{asyncResult.Id}");
+        _logger.LogTrace($"ReleaseAsyncResult Id:[{asyncResult.Id}]");
         _pool.Release(asyncResult.Id);
     }
 
@@ -491,7 +493,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     {
         try
         {
-            _logger.LogTrace($"RtwqPutWaitingWorkItem {asyncResult.Id}.");
+            _logger.LogTrace($"RtwqPutWaitingWorkItem Id:[{asyncResult.Id}].");
             asyncResult.WaitingToRun();
             Marshal.ThrowExceptionForHR(RTWorkQ.RtwqPutWaitingWorkItem(
                 waitHandle.SafeWaitHandle,
@@ -499,7 +501,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
                 asyncResult.RtwqAsyncResult,
                 out var key
             ));
-            _logger.LogTrace($"RtwqPutWaitingWorkItem {asyncResult.Id} {key.Key} ok.");
+            _logger.LogTrace($"RtwqPutWaitingWorkItem Id:[{asyncResult.Id}] {key.Key} ok.");
 
             asyncResult.BindCancellationToken(key, ct);
         }
@@ -571,7 +573,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     {
         try
         {
-            _logger.LogTrace($"RtwqScheduleWorkItem {asyncResult.Id}.");
+            _logger.LogTrace($"RtwqScheduleWorkItem Id:[{asyncResult.Id}].");
             asyncResult.WaitingToRun();
             Marshal.ThrowExceptionForHR(RTWorkQ.RtwqScheduleWorkItem(
                 asyncResult.RtwqAsyncResult,

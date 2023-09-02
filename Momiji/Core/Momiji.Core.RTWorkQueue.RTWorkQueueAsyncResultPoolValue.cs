@@ -13,10 +13,10 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<RTWorkQueueAsyncResultPoolValue> _logger;
     private bool _disposed;
-    internal RTWorkQ.IRtwqAsyncResult? _rtwqAsyncResult;
-    internal RTWorkQ.IRtwqAsyncCallback _rtwqAsyncCallback;
-    internal ApartmentType CreatedApartmentType { get; init; }
+    private RTWorkQ.IRtwqAsyncResult? _rtwqAsyncResult;
+    private readonly RTWorkQ.IRtwqAsyncCallback _rtwqAsyncCallback;
 
+    internal ApartmentType CreatedApartmentType { get; init; }
     internal RTWorkQ.IRtwqAsyncResult RtwqAsyncResult => _rtwqAsyncResult!;
     internal uint Id { get; init; }
 
@@ -98,31 +98,26 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
 
     protected override void Dispose(bool disposing)
     {
-        if (!_disposed)
+        if (_disposed)
         {
-            _logger.LogTrace($"Dispose start Id:{Id} {CreatedApartmentType}");
-            if (disposing)
-            {
-            }
-
-            if (_rtwqAsyncResult != null)
-            {
-                //TODO GeneratedComInterfaceでimportしたものをreleaseする方法？ FinalReleaseComObjectだとエラーになる
-
-                /*
-                //STAから呼ばれたときはMTAに移動して解放する
-                MTAExecuter.Invoke(_logger, () => {
-                    var count = Marshal.FinalReleaseComObject(_rtwqAsyncResult);
-                    _logger.LogTrace($"FinalReleaseComObject {count} {Id}");
-                });
-                */
-
-                _rtwqAsyncResult = null;
-            }
-
-            _disposed = true;
-            _logger.LogTrace($"Dispose end Id:{Id} {CreatedApartmentType}");
+            _logger.LogWarning($"already Disposed Id:{Id} {CreatedApartmentType}");
+            return;
         }
+
+        _logger.LogTrace($"Dispose start Id:{Id} {CreatedApartmentType}");
+        if (disposing)
+        {
+        }
+
+        if (_rtwqAsyncResult != null)
+        {
+            //TODO GeneratedComInterfaceでimportしたものをreleaseする方法？ FinalReleaseComObjectだとエラーになる
+
+            _rtwqAsyncResult = null;
+        }
+
+        _disposed = true;
+        _logger.LogTrace($"Dispose end Id:{Id} {CreatedApartmentType}");
     }
 
     internal void Initialize(
@@ -145,15 +140,31 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         _completeOnCancel = completeOnCancel;
     }
 
+    internal override void Free()
+    {
+        base.Free();
+
+        _key = RTWorkQ.RtWorkItemKey.None;
+        _ct = CancellationToken.None;
+
+        RtwqAsyncResult.SetStatus(0);
+
+        _flags = 0;
+        _workQueueId = RTWorkQ.WorkQueueId.None;
+        _action = null;
+        _afterAction = null;
+        _completeOnCancel = false;
+    }
+
     protected override void InvokeCore(RTWorkQ.IRtwqAsyncResult asyncResult, bool ignore)
     {
         var apartmentType = ApartmentType.GetApartmentType();
 
-        _logger.LogTrace($"RtwqAsyncCallback.Invoke Id:{Id} {CreatedApartmentType} {Status} / {apartmentType}");
+        _logger.LogTrace($"RtwqAsyncCallback.Invoke Id:[{Id}] {CreatedApartmentType} {Status} / {apartmentType}");
 
         if (ignore && _completeOnCancel)
         {
-            _logger.LogTrace($"RtwqAsyncCallback.Invoke skip Id:{Id} {CreatedApartmentType}");
+            _logger.LogTrace($"RtwqAsyncCallback.Invoke skip Id:[{Id}] {CreatedApartmentType}");
             return;
         }
 
@@ -164,15 +175,15 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         {
             if (!ignore)
             {
-                _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType}");
+                _logger.LogTrace($"_func.invoke Id:[{Id}] {CreatedApartmentType}");
                 _action?.Invoke();
-                _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType} ok.");
+                _logger.LogTrace($"_func.invoke Id:[{Id}] {CreatedApartmentType} ok.");
                 RanToCompletion();
                 RtwqAsyncResult.SetStatus(0);
             }
             else
             {
-                _logger.LogTrace($"canceled Id:{Id} {CreatedApartmentType}");
+                _logger.LogTrace($"canceled Id:[{Id}] {CreatedApartmentType}");
 
                 Canceled();
 
@@ -183,7 +194,7 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         }
         catch (Exception e)
         {
-            _logger.LogError(e, $"_func.failed Id:{Id} {CreatedApartmentType}");
+            _logger.LogError(e, $"_func.failed Id:[{Id}] {CreatedApartmentType}");
             error = e;
             Faulted();
 
@@ -194,12 +205,12 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
 
         try
         {
-            _logger.LogTrace("afterAction.Invoke");
+            _logger.LogTrace($"afterAction.Invoke Id:[{Id}]");
             afterAction?.Invoke(error, ignore ? _ct : CancellationToken.None);
         }
         catch (Exception e)
         {
-            _logger.LogError(e, $"afterAction.Invoke failed Id:{Id} {CreatedApartmentType} {_key.Key}.");
+            _logger.LogError(e, $"afterAction.Invoke failed Id:[{Id}] {CreatedApartmentType} {_key.Key}.");
         }
         finally
         {
@@ -212,11 +223,11 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         //TODO InvokeCoreとCancelCoreが同時に動いても問題ないようにする必要アリ？
         var apartmentType = ApartmentType.GetApartmentType();
 
-        _logger.LogTrace($"RtwqAsyncCallback.Cancel Id:{Id} {CreatedApartmentType} {Status} / {apartmentType}");
+        _logger.LogTrace($"RtwqAsyncCallback.Cancel Id:[{Id}] {CreatedApartmentType} {Status} / {apartmentType}");
 
         if (ignore)
         {
-            _logger.LogTrace($"RtwqAsyncCallback.Cancel skip Id:{Id} {CreatedApartmentType}");
+            _logger.LogTrace($"RtwqAsyncCallback.Cancel skip Id:[{Id}] {CreatedApartmentType}");
             return;
         }
 
@@ -226,15 +237,15 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         {
             if (_key.Key != RTWorkQ.RtWorkItemKey.None.Key)
             {
-                _logger.LogTrace($"RtwqCancelWorkItem Id:{Id} {CreatedApartmentType} {_key.Key}.");
+                _logger.LogTrace($"RtwqCancelWorkItem Id:[{Id}] {CreatedApartmentType} {_key.Key}.");
                 //TODO RtwqCancelWorkItemするとInvokeに移るので、そちらでReleaseした方がよいかも？
                 Marshal.ThrowExceptionForHR(_key.RtwqCancelWorkItem());
-                _logger.LogTrace($"RtwqCancelWorkItem Id:{Id} {CreatedApartmentType} {_key.Key} ok.");
+                _logger.LogTrace($"RtwqCancelWorkItem Id:[{Id}] {CreatedApartmentType} {_key.Key} ok.");
             }
 
             if (_completeOnCancel)
             {
-                _logger.LogTrace($"canceled Id:{Id} {CreatedApartmentType}");
+                _logger.LogTrace($"canceled Id:[{Id}] {CreatedApartmentType}");
 
                 Canceled();
 
@@ -246,11 +257,11 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         catch (COMException e) when (e.HResult == unchecked((int)0xC00D36D5)) //E_NOT_FOUND
         {
             //先に完了している場合は何もしない
-            _logger.LogDebug($"already invoked Id:{Id} {CreatedApartmentType} {_key.Key} {Status}.");
+            _logger.LogDebug($"already invoked Id:[{Id}] {CreatedApartmentType} {_key.Key} {Status}.");
         }
         catch (Exception e)
         {
-            _logger.LogError(e, $"failed Id:{Id} {CreatedApartmentType} {_key.Key}.");
+            _logger.LogError(e, $"failed Id:[{Id}] {CreatedApartmentType} {_key.Key}.");
 
             RtwqAsyncResult.SetStatus(
                 unchecked((int)0x8000FFFF) // E_UNEXPECTED
@@ -261,12 +272,12 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         {
             try
             {
-                _logger.LogTrace("afterAction.Invoke");
+                _logger.LogTrace($"afterAction.Invoke completeOnCancel Id:[{Id}]");
                 afterAction?.Invoke(null, _ct);
             }
             catch (Exception e)
             {
-                _logger.LogError(e, $"afterAction.Invoke failed Id:{Id} {CreatedApartmentType} {_key.Key}.");
+                _logger.LogError(e, $"afterAction.Invoke failed Id:[{Id}] {CreatedApartmentType} {_key.Key}.");
             }
             finally
             {

@@ -17,8 +17,8 @@ public class RTWorkQueueTest : IDisposable
 
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
-    private readonly IRTWorkQueuePlatformEventsHandler _workQueuePlatformEventsHandler;
-    private readonly IRTWorkQueueManager _workQueueManager;
+    private readonly RTWorkQueuePlatformEventsHandler _workQueuePlatformEventsHandler;
+    private readonly RTWorkQueueManager _workQueueManager;
 
     public RTWorkQueueTest()
     {
@@ -311,7 +311,7 @@ public class RTWorkQueueTest : IDisposable
         await putTask2;
 
         //I—¹‘Ò‚¿
-        while (taskMap.Count > 0)
+        while (!taskMap.IsEmpty)
         {
             var task = await Task.WhenAny(taskMap.Keys).ConfigureAwait(false);
             taskMap.Remove(task, out var id);
@@ -741,11 +741,13 @@ public class RTWorkQueueTest : IDisposable
                         IRTWorkQueue.TaskPriority.NORMAL,
                         () =>
                         {
-                            TestTask(counter, list, j, cde);
+                            TestTask(counter, list, j);
                         },
                         (error, ct) =>
                         {
-                            list.Enqueue(($"result error [{error}] ct [{ct.IsCancellationRequested}].", counter.ElapsedTicks));
+                            cde.Signal();
+
+                            list.Enqueue(($"result {j} error [{error}] ct [{ct.IsCancellationRequested}].", counter.ElapsedTicks));
                         }
                     );
                 }

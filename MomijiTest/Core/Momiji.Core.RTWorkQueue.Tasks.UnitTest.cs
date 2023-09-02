@@ -17,7 +17,7 @@ public class RTWorkQueueTasksTest : IDisposable
 
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
-    private readonly IRTWorkQueueTaskSchedulerManager _workQueueTaskSchedulerManager;
+    private readonly RTWorkQueueTaskSchedulerManager _workQueueTaskSchedulerManager;
 
     public RTWorkQueueTasksTest()
     {
@@ -321,10 +321,10 @@ public class RTWorkQueueTasksTest : IDisposable
         var counter = new ElapsedTimeCounter();
         counter.Reset();
 
-        var workItem = (int index) =>
+        void workItem(int index)
         {
-            TestTask(counter, list, result, index, index+1, cde);
-        };
+            TestTask(counter, list, result, index, index + 1, cde);
+        }
 
         for (var i = 0; i < TIMES; i++)
         {
