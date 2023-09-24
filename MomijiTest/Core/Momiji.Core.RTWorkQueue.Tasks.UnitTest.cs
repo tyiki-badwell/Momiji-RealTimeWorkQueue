@@ -12,8 +12,8 @@ namespace Momiji.Core.RTWorkQueue.Tasks;
 [TestClass]
 public class RTWorkQueueTasksTest : IDisposable
 {
-    private const int TIMES = 1000;
-    private const int SUB_TIMES = 10000;
+    private const int TIMES = 10000;
+    private const int SUB_TIMES = 100000;
 
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
@@ -171,7 +171,7 @@ public class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [Timeout(5000)]
+    [Timeout(10000)]
     [DataRow(false, ApartmentState.STA, ApartmentState.STA)]
     [DataRow(true, ApartmentState.STA, ApartmentState.STA)]
     [DataRow(false, ApartmentState.MTA, ApartmentState.STA)]
@@ -250,7 +250,7 @@ public class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [Timeout(10000)]
+    [Timeout(1000000)]
     [DataRow(false, TIMES)]
     [DataRow(true, TIMES, "Pro Audio")]
     [DataRow(true, TIMES, "Pro Audio", IRTWorkQueue.WorkQueueType.MultiThreaded)]
@@ -495,7 +495,7 @@ public class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [Timeout(5000)]
+    [Timeout(10000)]
     [DataRow(false)]
     [DataRow(true)]
     public async Task TestAsyncEnumerable(

@@ -13,7 +13,7 @@ namespace Momiji.Core.RTWorkQueue;
 public class RTWorkQueueTest : IDisposable
 {
     private const int TIMES = 1000;
-    private const int SUB_TIMES = 1000;
+    private const int SUB_TIMES = 100000;
 
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
