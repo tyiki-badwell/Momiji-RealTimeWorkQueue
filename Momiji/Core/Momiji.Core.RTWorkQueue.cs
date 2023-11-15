@@ -6,7 +6,7 @@ public interface IRTWorkQueuePlatformEventsHandler : IDisposable
 {
 }
 
-public interface IRTWorkQueueTaskSchedulerManager : IDisposable
+public interface IRTWorkQueueTaskSchedulerManager : IDisposable, IAsyncDisposable
 {
     public TaskScheduler GetTaskScheduler(
         string usageClass = "",
@@ -21,7 +21,7 @@ public interface IRTWorkQueueTaskSchedulerManager : IDisposable
     );
 }
 
-public interface IRTWorkQueueManager : IDisposable
+public interface IRTWorkQueueManager : IDisposable, IAsyncDisposable
 {
     public IRTWorkQueue CreatePlatformWorkQueue(
         string usageClass = "",
@@ -34,6 +34,46 @@ public interface IRTWorkQueueManager : IDisposable
 
     public IRTWorkQueue CreateSerialWorkQueue(
         IRTWorkQueue workQueue
+    );
+
+    public void RegisterMMCSS(
+        string usageClass,
+        IRTWorkQueue.TaskPriority basePriority = IRTWorkQueue.TaskPriority.NORMAL,
+        int taskId = 0
+    );
+
+    public void UnregisterMMCSS();
+
+    public void PutWaitingWorkItem(
+        IRTWorkQueue.TaskPriority priority,
+        WaitHandle waitHandle,
+        Action action,
+        Action<Exception?, CancellationToken>? afterAction = default,
+        CancellationToken ct = default
+    );
+
+    public Task PutWaitingWorkItemAsync(
+        IRTWorkQueue.TaskPriority priority,
+        WaitHandle waitHandle,
+        Action action,
+        CancellationToken ct = default
+    );
+
+    public void ScheduleWorkItem(
+        long timeout,
+        Action action,
+        Action<Exception?, CancellationToken>? afterAction = default,
+        CancellationToken ct = default
+    );
+
+    public Task ScheduleWorkItemAsync(
+        long timeout,
+        Action action,
+        CancellationToken ct = default
+    );
+
+    public IDisposable AddPeriodicCallback(
+        Action action
     );
 }
 
@@ -63,9 +103,10 @@ public interface IRTWorkQueue : IDisposable
 
     public Task PutWorkItemAsync(
         TaskPriority priority,
-        Action action,
+        Action action, 
         CancellationToken ct = default
     );
+
     public IDisposable Lock();
 
     public SafeHandle Join(

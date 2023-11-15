@@ -1,21 +1,22 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks.Dataflow;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Momiji.Core.Timer;
 using Momiji.Internal.Debug;
-using Xunit;
 
 namespace Momiji.Core.RTWorkQueue.Tasks;
 
+[TestClass]
 public class RTWorkQueueTasksTest : IDisposable
 {
-    private const int TIMES = 500;
-    private const int WAIT = 10;
+    private const int TIMES = 10000;
+    private const int SUB_TIMES = 100000;
 
     private readonly ILoggerFactory _loggerFactory;
-    private readonly ILogger<RTWorkQueueTasksTest> _logger;
-    private readonly RTWorkQueuePlatformEventsHandler _workQueuePlatformEventsHandler;
+    private readonly ILogger _logger;
     private readonly RTWorkQueueTaskSchedulerManager _workQueueTaskSchedulerManager;
 
     public RTWorkQueueTasksTest()
@@ -36,17 +37,15 @@ public class RTWorkQueueTasksTest : IDisposable
             builder.AddConsole();
             builder.AddDebug();
         });
+
         _logger = _loggerFactory.CreateLogger<RTWorkQueueTasksTest>();
 
-        _workQueuePlatformEventsHandler = new(_loggerFactory);
-        //_workQueueManager = new(configuration, _loggerFactory);
-        _workQueueTaskSchedulerManager = new(configuration, _loggerFactory);
+        _workQueueTaskSchedulerManager = new RTWorkQueueTaskSchedulerManager(configuration, _loggerFactory);
     }
 
     public void Dispose()
     {
         _workQueueTaskSchedulerManager?.Dispose();
-        _workQueuePlatformEventsHandler?.Dispose();
         _loggerFactory?.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -88,7 +87,12 @@ public class RTWorkQueueTasksTest : IDisposable
     )
     {
         list.Enqueue(($"action invoke {index} {value}", counter.ElapsedTicks));
-        Thread.CurrentThread.Join(WAIT);
+        for (var i = 0; i < SUB_TIMES; i++)
+        {
+            var a = 1;
+            var b = 2;
+            var _ = a * b * i;
+        }
         result[index] = value;
 
         if (cde != null)
@@ -109,21 +113,21 @@ public class RTWorkQueueTasksTest : IDisposable
     {
         for (var index = 0; index < result.Length; index++)
         {
-            Assert.Equal(index+1, result[index]);
+            Assert.AreEqual(index+1, result[index]);
         }
 
         {
             var (tag, time) = list.ToList()[^1];
-            _logger?.LogInformation($"LAST: {tag}\t{(double)time / 10000}");
+            _logger.LogInformation($"LAST: {tag}\t{(double)time / 10000}");
         }
 
         foreach (var (tag, time) in list)
         {
-            _logger?.LogInformation($"{tag}\t{(double)time / 10000}");
+            _logger.LogInformation($"{tag}\t{(double)time / 10000}");
         }
     }
 
-    [Fact]
+    [TestMethod]
     public void TestLoopNormal()
     {
         var list = new ConcurrentQueue<(string, long)>();
@@ -141,9 +145,10 @@ public class RTWorkQueueTasksTest : IDisposable
         PrintResult(list, result);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [TestMethod]
+    [Timeout(5000)]
+    [DataRow(false)]
+    [DataRow(true)]
     public void TestLoopParallel(bool rtwqTaskScheduler)
     {
         var list = new ConcurrentQueue<(string, long)>();
@@ -165,15 +170,16 @@ public class RTWorkQueueTasksTest : IDisposable
         PrintResult(list, result);
     }
 
-    [Theory]
-    [InlineData(false, ApartmentState.STA, ApartmentState.STA)]
-    [InlineData(true, ApartmentState.STA, ApartmentState.STA)]
-    [InlineData(false, ApartmentState.MTA, ApartmentState.STA)]
-    [InlineData(true, ApartmentState.MTA, ApartmentState.STA)]
-    [InlineData(false, ApartmentState.STA, ApartmentState.MTA)]
-    [InlineData(true, ApartmentState.STA, ApartmentState.MTA)]
-    [InlineData(false, ApartmentState.MTA, ApartmentState.MTA)]
-    [InlineData(true, ApartmentState.MTA, ApartmentState.MTA)]
+    [TestMethod]
+    [Timeout(10000)]
+    [DataRow(false, ApartmentState.STA, ApartmentState.STA)]
+    [DataRow(true, ApartmentState.STA, ApartmentState.STA)]
+    [DataRow(false, ApartmentState.MTA, ApartmentState.STA)]
+    [DataRow(true, ApartmentState.MTA, ApartmentState.STA)]
+    [DataRow(false, ApartmentState.STA, ApartmentState.MTA)]
+    [DataRow(true, ApartmentState.STA, ApartmentState.MTA)]
+    [DataRow(false, ApartmentState.MTA, ApartmentState.MTA)]
+    [DataRow(true, ApartmentState.MTA, ApartmentState.MTA)]
     public async Task TestApartment(
         bool rtwqTaskScheduler, 
         ApartmentState apartmentState1, 
@@ -186,7 +192,7 @@ public class RTWorkQueueTasksTest : IDisposable
         var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
 
         var thread = new Thread(async () => {
-            _logger!.LogInformation($"thread 1 start {Environment.CurrentManagedThreadId:X}");
+            _logger.LogInformation($"thread 1 start {Environment.CurrentManagedThreadId:X}");
             ThreadDebug.PrintObjectContext(_loggerFactory!);
 
             var factory = new TaskFactory(scheduler);
@@ -194,41 +200,41 @@ public class RTWorkQueueTasksTest : IDisposable
             var task =
                 factory.StartNew(() => {
                     ThreadDebug.PrintObjectContext(_loggerFactory!);
-                    _logger!.LogInformation($"task 1 {Environment.CurrentManagedThreadId:X}");
+                    _logger.LogInformation($"task 1 {Environment.CurrentManagedThreadId:X}");
                 });
             await task.ContinueWith((task) => {
-                _logger!.LogInformation($"task 1 continue {Environment.CurrentManagedThreadId:X}");
+                _logger.LogInformation($"task 1 continue {Environment.CurrentManagedThreadId:X}");
             });
 
             task.Wait();
-            _logger!.LogInformation($"thread 1 end {Environment.CurrentManagedThreadId:X}");
+            _logger.LogInformation($"thread 1 end {Environment.CurrentManagedThreadId:X}");
 
             {
                 var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
 
                 var thread = new Thread(async () => {
-                    _logger!.LogInformation($"thread 2 start {Environment.CurrentManagedThreadId:X}");
+                    _logger.LogInformation($"thread 2 start {Environment.CurrentManagedThreadId:X}");
                     ThreadDebug.PrintObjectContext(_loggerFactory!);
 
                     var task =
                         factory.StartNew(() => {
                             ThreadDebug.PrintObjectContext(_loggerFactory!);
-                            _logger!.LogInformation($"task 2 {Environment.CurrentManagedThreadId:X}");
+                            _logger.LogInformation($"task 2 {Environment.CurrentManagedThreadId:X}");
                         });
                     await task.ContinueWith((task) => {
-                        _logger!.LogInformation($"task 2 continue {Environment.CurrentManagedThreadId:X}");
+                        _logger.LogInformation($"task 2 continue {Environment.CurrentManagedThreadId:X}");
                     });
                     task.Wait();
-                    _logger!.LogInformation($"thread 2 end {Environment.CurrentManagedThreadId:X}");
+                    _logger.LogInformation($"thread 2 end {Environment.CurrentManagedThreadId:X}");
 
                     tcs.SetResult();
                 });
                 thread.TrySetApartmentState(apartmentState2);
                 thread.Start();
                 await tcs.Task.ContinueWith((task) => {
-                    _logger!.LogInformation($"thread 2 continue {Environment.CurrentManagedThreadId:X}");
+                    _logger.LogInformation($"thread 2 continue {Environment.CurrentManagedThreadId:X}");
                 });
-                _logger!.LogInformation($"thread 2 join {Environment.CurrentManagedThreadId:X}");
+                _logger.LogInformation($"thread 2 join {Environment.CurrentManagedThreadId:X}");
             }
 
             tcs.SetResult();
@@ -237,18 +243,30 @@ public class RTWorkQueueTasksTest : IDisposable
         thread.Start();
 
         await tcs.Task.ContinueWith((task) => {
-            _logger!.LogInformation($"thread 1 continue {Environment.CurrentManagedThreadId:X}");
+            _logger.LogInformation($"thread 1 continue {Environment.CurrentManagedThreadId:X}");
         });
 
-        _logger!.LogInformation($"thread 1 join {Environment.CurrentManagedThreadId:X}");
+        _logger.LogInformation($"thread 1 join {Environment.CurrentManagedThreadId:X}");
     }
 
-    [Theory]
-    [InlineData(false, TIMES)]
-    [InlineData(true, TIMES)]
-    [InlineData(false, 1)]
-    [InlineData(true, 1)]
-    public void TestDataflow(bool rtwqTaskScheduler, int maxDegreeOfParallelism)
+    [TestMethod]
+    [Timeout(1000000)]
+    [DataRow(false, TIMES)]
+    [DataRow(true, TIMES, "Pro Audio")]
+    [DataRow(true, TIMES, "Pro Audio", IRTWorkQueue.WorkQueueType.MultiThreaded)]
+    [DataRow(true, TIMES, "Pro Audio", IRTWorkQueue.WorkQueueType.Standard)]
+    [DataRow(true, TIMES, "Pro Audio", IRTWorkQueue.WorkQueueType.Window)]
+    [DataRow(false, 1)]
+    [DataRow(true, 1)]
+    public void TestDataflow(
+        bool rtwqTaskScheduler, 
+        int maxDegreeOfParallelism,
+        string usageClass = "",
+        IRTWorkQueue.WorkQueueType? type = null,
+        bool serial = false,
+        IRTWorkQueue.TaskPriority basePriority = IRTWorkQueue.TaskPriority.NORMAL,
+        int taskId = 0
+    )
     {
         var list = new ConcurrentQueue<(string, long)>();
         var result = new int[TIMES];
@@ -259,7 +277,7 @@ public class RTWorkQueueTasksTest : IDisposable
         var options = new ExecutionDataflowBlockOptions
         {
             MaxDegreeOfParallelism = maxDegreeOfParallelism,
-            TaskScheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default
+            TaskScheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler(usageClass, type, serial, basePriority, taskId) : TaskScheduler.Default
         };
 
         var block = new TransformBlock<int, int>(index => {
@@ -292,7 +310,7 @@ public class RTWorkQueueTasksTest : IDisposable
         PrintResult(list, result);
     }
 
-    [Fact]
+    [TestMethod]
     public void TestThreadPool_QueueUserWorkItem()
     {
         var list = new ConcurrentQueue<(string, long)>();
@@ -303,10 +321,10 @@ public class RTWorkQueueTasksTest : IDisposable
         var counter = new ElapsedTimeCounter();
         counter.Reset();
 
-        var workItem = (int index) =>
+        void workItem(int index)
         {
-            TestTask(counter, list, result, index, index+1, cde);
-        };
+            TestTask(counter, list, result, index, index + 1, cde);
+        }
 
         for (var i = 0; i < TIMES; i++)
         {
@@ -321,19 +339,19 @@ public class RTWorkQueueTasksTest : IDisposable
         PrintResult(list, result);
     }
 
-    [Theory]
-    [InlineData(TaskCreationOptions.None, TaskCreationOptions.None, TaskContinuationOptions.None, false)]
-    [InlineData(TaskCreationOptions.None, TaskCreationOptions.None, TaskContinuationOptions.None, true)]
-    [InlineData(TaskCreationOptions.None, TaskCreationOptions.None, TaskContinuationOptions.None, false, true)]
-    [InlineData(TaskCreationOptions.None, TaskCreationOptions.None, TaskContinuationOptions.None, true, true)]
-    [InlineData(TaskCreationOptions.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.AttachedToParent, false)]
-    [InlineData(TaskCreationOptions.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.AttachedToParent, true)]
-    [InlineData(TaskCreationOptions.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.ExecuteSynchronously, false)]
-    [InlineData(TaskCreationOptions.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.ExecuteSynchronously, true)]
-    [InlineData(TaskCreationOptions.DenyChildAttach, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.AttachedToParent, false)]
-    [InlineData(TaskCreationOptions.DenyChildAttach, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.AttachedToParent, true)]
-    [InlineData(TaskCreationOptions.LongRunning, TaskCreationOptions.LongRunning, TaskContinuationOptions.LongRunning, false)]
-    [InlineData(TaskCreationOptions.LongRunning, TaskCreationOptions.LongRunning, TaskContinuationOptions.LongRunning, true)]
+    [TestMethod]
+    [DataRow(TaskCreationOptions.None, TaskCreationOptions.None, TaskContinuationOptions.None, false)]
+    [DataRow(TaskCreationOptions.None, TaskCreationOptions.None, TaskContinuationOptions.None, true)]
+    [DataRow(TaskCreationOptions.None, TaskCreationOptions.None, TaskContinuationOptions.None, false, true)]
+    [DataRow(TaskCreationOptions.None, TaskCreationOptions.None, TaskContinuationOptions.None, true, true)]
+    [DataRow(TaskCreationOptions.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.AttachedToParent, false)]
+    [DataRow(TaskCreationOptions.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.AttachedToParent, true)]
+    [DataRow(TaskCreationOptions.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.ExecuteSynchronously, false)]
+    [DataRow(TaskCreationOptions.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.ExecuteSynchronously, true)]
+    [DataRow(TaskCreationOptions.DenyChildAttach, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.AttachedToParent, false)]
+    [DataRow(TaskCreationOptions.DenyChildAttach, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.AttachedToParent, true)]
+    [DataRow(TaskCreationOptions.LongRunning, TaskCreationOptions.LongRunning, TaskContinuationOptions.LongRunning, false)]
+    [DataRow(TaskCreationOptions.LongRunning, TaskCreationOptions.LongRunning, TaskContinuationOptions.LongRunning, true)]
     public async Task TestTaskFactoryStartNewAction(
         TaskCreationOptions taskCreationOptionsParent,
         TaskCreationOptions taskCreationOptionsChild,
@@ -352,9 +370,9 @@ public class RTWorkQueueTasksTest : IDisposable
             );
 
         var result = new int[3];
-        Assert.Equal(0, result[0]);
-        Assert.Equal(0, result[1]);
-        Assert.Equal(0, result[2]);
+        Assert.AreEqual(0, result[0]);
+        Assert.AreEqual(0, result[1]);
+        Assert.AreEqual(0, result[2]);
 
         Task? child = null;
         Task? cont = null;
@@ -363,7 +381,7 @@ public class RTWorkQueueTasksTest : IDisposable
 
             child = factory.StartNew(() => {
                 Task.Delay(100).Wait();
-                _logger?.LogInformation($"2:{Environment.StackTrace}");
+                _logger.LogInformation($"2:{Environment.StackTrace}");
 
                 if (childError)
                 {
@@ -375,36 +393,36 @@ public class RTWorkQueueTasksTest : IDisposable
 
             cont = child.ContinueWith((task) => {
                 Task.Delay(200).Wait();
-                _logger?.LogInformation($"3:{Environment.StackTrace}");
+                _logger.LogInformation($"3:{Environment.StackTrace}");
 
                 result[2] = 3;
             }, taskContinuationOptions);
 
-            _logger?.LogInformation($"1:{Environment.StackTrace}");
+            _logger.LogInformation($"1:{Environment.StackTrace}");
             result[0] = 1;
         });
 
         await parent;
-        _logger?.LogInformation($"Parent end {taskCreationOptionsParent} {taskCreationOptionsChild} {taskContinuationOptions}");
+        _logger.LogInformation($"Parent end {taskCreationOptionsParent} {taskCreationOptionsChild} {taskContinuationOptions}");
 
-        Assert.Equal(1, result[0]);
+        Assert.AreEqual(1, result[0]);
 
-        _logger?.LogInformation($"Parent !DenyChildAttach {((taskCreationOptionsParent & TaskCreationOptions.DenyChildAttach) == 0)}");
-        _logger?.LogInformation($"Child AttachedToParent {((taskCreationOptionsChild & TaskCreationOptions.AttachedToParent) != 0)}");
+        _logger.LogInformation($"Parent !DenyChildAttach {((taskCreationOptionsParent & TaskCreationOptions.DenyChildAttach) == 0)}");
+        _logger.LogInformation($"Child AttachedToParent {((taskCreationOptionsChild & TaskCreationOptions.AttachedToParent) != 0)}");
 
         if (
             ((taskCreationOptionsParent & TaskCreationOptions.DenyChildAttach) == 0)
             && ((taskCreationOptionsChild & TaskCreationOptions.AttachedToParent) != 0)
         )
         {
-            Assert.Equal(2, result[1]);
+            Assert.AreEqual(2, result[1]);
         }
         else
         {
             try
             {
                 await child!;
-                Assert.Equal(2, result[1]);
+                Assert.AreEqual(2, result[1]);
             }
             catch(Exception e)
             {
@@ -415,27 +433,27 @@ public class RTWorkQueueTasksTest : IDisposable
             }
         }
 
-        _logger?.LogInformation($"Continue AttachedToParent {((taskContinuationOptions & TaskContinuationOptions.AttachedToParent) != 0)}");
+        _logger.LogInformation($"Continue AttachedToParent {((taskContinuationOptions & TaskContinuationOptions.AttachedToParent) != 0)}");
 
         if (
             ((taskCreationOptionsParent & TaskCreationOptions.DenyChildAttach) == 0)
             && ((taskContinuationOptions & TaskContinuationOptions.AttachedToParent) != 0)
         )
         {
-            Assert.Equal(3, result[2]);
+            Assert.AreEqual(3, result[2]);
         }
         else
         {
             await cont!;
-            Assert.Equal(3, result[2]);
+            Assert.AreEqual(3, result[2]);
         }
     }
 
-    [Theory]
-    [InlineData(false, TaskCreationOptions.None)]
-    [InlineData(true, TaskCreationOptions.None)]
-    [InlineData(false, TaskCreationOptions.AttachedToParent)]
-    [InlineData(true, TaskCreationOptions.AttachedToParent)]
+    [TestMethod]
+    [DataRow(false, TaskCreationOptions.DenyChildAttach)]
+    [DataRow(true, TaskCreationOptions.DenyChildAttach)]
+    [DataRow(false, TaskCreationOptions.AttachedToParent)]
+    [DataRow(true, TaskCreationOptions.AttachedToParent)]
     public async Task TestTaskFactoryStartNewAction2(
         bool rtwqTaskScheduler,
         TaskCreationOptions taskCreationOptionsParent
@@ -444,18 +462,84 @@ public class RTWorkQueueTasksTest : IDisposable
         var scheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
         var factory = new TaskFactory(CancellationToken.None, taskCreationOptionsParent, TaskContinuationOptions.None, scheduler);
 
-        _logger?.LogInformation("START 1");
-        await factory.StartNew(async () => {
-            _logger?.LogInformation("START 2");
-            await factory.StartNew(async () => {
-                _logger?.LogInformation("START 3");
-                await factory.StartNew(async () => {
+        _logger.LogInformation("START 1");
+        var result = await await factory.StartNew(async () => {
+            _logger.LogInformation("START 2");
+            var result = await await factory.StartNew(async () => {
+                _logger.LogInformation("START 3");
+                var result = await await factory.StartNew(async () => {
+                    _logger.LogInformation("START 4");
                     await Task.Delay(1);
+                    _logger.LogInformation("END 4");
+                    return 1;
                 });
-                _logger?.LogInformation("END 3");
+                _logger.LogInformation($"END 3 {result}");
+                return result + 1;
             });
-            _logger?.LogInformation("END 2");
+            _logger.LogInformation($"END 2 {result}");
+            return result + 1;
         });
-        _logger?.LogInformation("END 1");
+        _logger.LogInformation($"END 1 {result}");
     }
+
+    private async IAsyncEnumerable<int> GenerateAsync(
+        [EnumeratorCancellation] CancellationToken ct
+    )
+    {
+        var i = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            await Task.Delay(0, ct);
+            yield return i++;
+        }
+    }
+
+    [TestMethod]
+    [Timeout(10000)]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task TestAsyncEnumerable(
+        bool rtwqTaskScheduler
+    )
+    {
+        var scheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
+        var factory = new TaskFactory(CancellationToken.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.None, scheduler);
+
+        var counter = new ElapsedTimeCounter();
+
+        using var cts = new CancellationTokenSource();
+
+        var _ = Task.Delay(50000).ContinueWith((task) => {
+            _logger.LogInformation($"CANCEL {(double)counter.ElapsedTicks / 10_000}");
+            cts.Cancel();
+        });
+
+        try
+        {
+            counter.Reset();
+            _logger.LogInformation($"START {(double)counter.ElapsedTicks / 10_000}");
+            await await factory.StartNew(async () => {
+                _logger.LogInformation($"TASK START {(double)counter.ElapsedTicks / 10_000}");
+                await foreach (var a in GenerateAsync(cts.Token))
+                {
+                    _logger.LogInformation($"GENERATE {(double)counter.ElapsedTicks / 10_000} {a}");
+                    if (a >= TIMES)
+                    {
+                        break;
+                    }
+                }
+                _logger.LogInformation($"TASK END {(double)counter.ElapsedTicks / 10_000}");
+            });
+            _logger.LogInformation($"END {(double)counter.ElapsedTicks / 10_000}");
+        }
+        catch (TaskCanceledException e)
+        {
+            _logger.LogInformation($"cancel {e}");
+        }
+
+        //await Task.Delay(5000);
+
+        _logger.LogInformation($"EXIT {(double)counter.ElapsedTicks / 10_000}");
+    }
+
 }

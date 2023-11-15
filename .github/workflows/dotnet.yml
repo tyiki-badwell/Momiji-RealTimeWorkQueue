@@ -2,9 +2,9 @@ name: .NET
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ 'master', 'develop' ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ 'master', 'develop' ]
 
 jobs:
   build:
@@ -16,12 +16,12 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: 7.x.x
+        dotnet-version: 8.x.x
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
       run: dotnet build --no-restore
     - name: Test-x64
-      run: dotnet test --no-build --verbosity normal --arch x64
+      run: dotnet test --no-build --verbosity normal
 #    - name: Test-x86
 #      run: dotnet test --no-build --verbosity normal --arch x86

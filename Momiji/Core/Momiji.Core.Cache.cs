@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Momiji.Core.Cache;
 
-public abstract class PoolValue : IDisposable
+public abstract class PoolValue<TParam> : IDisposable
 {
     public enum PoolValueStatus : int
     {
@@ -43,7 +43,7 @@ public abstract class PoolValue : IDisposable
 
     protected abstract void Dispose(bool disposing);
 
-    internal void Free()
+    internal virtual void Free()
     {
         Status = PoolValueStatus.Free;
     }
@@ -73,19 +73,19 @@ public abstract class PoolValue : IDisposable
         Status = PoolValueStatus.Faulted;
     }
 
-    public void Invoke()
+    public void Invoke(TParam param)
     {
         if ((int)PoolValueStatus.WaitingToRun == Interlocked.CompareExchange(ref _status, (int)PoolValueStatus.Running, (int)PoolValueStatus.WaitingToRun))
         {
-            InvokeCore(false);
+            InvokeCore(param, false);
         }
         else
         {
-            InvokeCore(true);
+            InvokeCore(param, true);
         }
     }
 
-    protected abstract void InvokeCore(bool ignore);
+    protected abstract void InvokeCore(TParam param, bool ignore);
 
     public void Cancel()
     {
@@ -102,9 +102,9 @@ public abstract class PoolValue : IDisposable
     protected abstract void CancelCore(bool ignore);
 }
 
-public class Pool<TKey, TValue> : IDisposable
+public class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
     where TKey : notnull
-    where TValue : notnull, PoolValue
+    where TValue : notnull, PoolValue<TParam>
 {
     private readonly ILogger _logger;
 
@@ -124,7 +124,7 @@ public class Pool<TKey, TValue> : IDisposable
         ArgumentNullException.ThrowIfNull(allocator);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
-        _logger = loggerFactory.CreateLogger<Pool<TKey, TValue>>();
+        _logger = loggerFactory.CreateLogger<Pool<TKey, TValue, TParam>>();
         _allocator = allocator;
     }
 
@@ -135,7 +135,7 @@ public class Pool<TKey, TValue> : IDisposable
             item = Add();
         }
 
-        _logger.LogTrace($"busy {item.Item1}");
+        _logger.LogTrace($"busy Id:[{item.Item1}]");
         _busy.TryAdd(item.Item1, item.Item2);
         item.Item2.Rent();
 
@@ -145,7 +145,7 @@ public class Pool<TKey, TValue> : IDisposable
     private (TKey, TValue) Add()
     {
         var (key, value) = _allocator();
-        _logger.LogTrace($"create {key}");
+        _logger.LogTrace($"create Id:[{key}]");
         _cache.Push((key, value));
 
         return (key, value);
@@ -155,13 +155,13 @@ public class Pool<TKey, TValue> : IDisposable
     {
         if (_busy.TryRemove(key, out var value))
         {
-            _logger.LogTrace($"release {key}");
-            _avail.Push((key, value));
+            _logger.LogTrace($"release Id:[{key}]");
             value.Free();
+            _avail.Push((key, value));
         }
         else
         {
-            _logger.LogWarning($"not busy {key}");
+            _logger.LogWarning($"not busy Id:[{key}]");
         }
     }
 
@@ -185,37 +185,58 @@ public class Pool<TKey, TValue> : IDisposable
 
         if (disposing)
         {
-            _logger.LogDebug($"busy items {_busy.Count}");
-
-            while (!_busy.IsEmpty)
-            {
-                foreach (var key in _busy.Keys)
-                {
-                    _logger.LogDebug($"try cancel busy key {key}");
-                    if (_busy.TryGetValue(key, out var result))
-                    {
-                        _logger.LogDebug($"{key} {result.Status}");
-                        result.Cancel();
-                    }
-                }
-
-                _logger.LogDebug($"wait ...");
-                Task.Delay(10).Wait();
-            }
-
-            _logger.LogDebug($"avail items {_avail.Count}");
-            _logger.LogDebug($"cache items {_cache.Count}");
-
-            _avail.Clear();
-
-            while (_cache.TryPop(out var result))
-            {
-                result.Item2.Dispose();
-            }
-            _cache.Clear();
+            DisposeAsyncCore().AsTask().Wait();
         }
 
         _disposed = true;
     }
 
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore().ConfigureAwait(false);
+
+        Dispose(false);
+
+        GC.SuppressFinalize(this);
+    }
+
+    protected async virtual ValueTask DisposeAsyncCore()
+    {
+        _logger.LogTrace("DisposeAsync start");
+
+        _logger.LogDebug($"busy items {_busy.Count}");
+
+        while (IsBusy())
+        {
+            foreach (var key in _busy.Keys)
+            {
+                _logger.LogDebug($"try cancel busy key Id:[{key}]");
+                if (_busy.TryGetValue(key, out var result))
+                {
+                    _logger.LogDebug($"Id:[{key}] {result.Status}");
+                    result.Cancel();
+                }
+            }
+
+            _logger.LogDebug($"wait ...");
+            await Task.Delay(10).ConfigureAwait(false);
+        }
+
+        _logger.LogDebug($"avail items {_avail.Count}");
+        _logger.LogDebug($"cache items {_cache.Count}");
+
+        _avail.Clear();
+
+        while (_cache.TryPop(out var result))
+        {
+            result.Item2.Dispose();
+        }
+        _cache.Clear();
+        _logger.LogTrace("DisposeAsync end");
+    }
+
+    public bool IsBusy()
+    {
+        return !_busy.IsEmpty;
+    }
 }

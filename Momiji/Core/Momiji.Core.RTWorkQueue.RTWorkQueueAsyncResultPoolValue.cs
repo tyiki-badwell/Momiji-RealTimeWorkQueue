@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using Microsoft.Extensions.Logging;
 using Momiji.Core.Cache;
 using Momiji.Core.Threading;
@@ -7,22 +8,24 @@ using RTWorkQ = Momiji.Interop.RTWorkQ.NativeMethods;
 
 namespace Momiji.Core.RTWorkQueue;
 
-internal class RTWorkQueueAsyncResultPoolValue : PoolValue
+internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwqAsyncResult>
 {
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<RTWorkQueueAsyncResultPoolValue> _logger;
     private bool _disposed;
-    internal RTWorkQ.IRtwqAsyncResult _rtwqAsyncResult;
-    internal RTWorkQ.IRtwqAsyncCallback _rtwqAsyncCallback;
-    internal ApartmentType CreatedApartmentType { get; init; }
+    private RTWorkQ.IRtwqAsyncResult? _rtwqAsyncResult;
+    private readonly RTWorkQ.IRtwqAsyncCallback _rtwqAsyncCallback;
 
-    internal RTWorkQ.IRtwqAsyncResult RtwqAsyncResult => _rtwqAsyncResult;
+    internal ApartmentType CreatedApartmentType { get; init; }
+    internal RTWorkQ.IRtwqAsyncResult RtwqAsyncResult => _rtwqAsyncResult!;
     internal uint Id { get; init; }
 
     private readonly RTWorkQueueManager _parent;
 
+    //GetParameters
     private uint _flags;
     private RTWorkQ.WorkQueueId _workQueueId;
+
     private Action? _action;
     
     private RTWorkQ.RtWorkItemKey _key;
@@ -30,8 +33,11 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
 
     private Action<Exception?, CancellationToken>? _afterAction;
 
+    private bool _completeOnCancel = false;
+
     [ClassInterface(ClassInterfaceType.None)]
-    private class RtwqAsyncCallbackImpl : RTWorkQ.IRtwqAsyncCallback
+    [GeneratedComClass]
+    private partial class RtwqAsyncCallbackImpl : RTWorkQ.IRtwqAsyncCallback
     {
         private readonly RTWorkQueueAsyncResultPoolValue _parent;
         public RtwqAsyncCallbackImpl(
@@ -57,7 +63,7 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
         {
             try
             {
-                _parent.Invoke();
+                _parent.Invoke(pAsyncResult);
             }
             catch (Exception e)
             {
@@ -72,9 +78,6 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
         RTWorkQueueManager parent
     ): base()
     {
-        //STAからの呼び出しはサポート外にする
-        ApartmentType.CheckNeedMTA();
-
         _loggerFactory = loggerFactory;
         _logger = _loggerFactory.CreateLogger<RTWorkQueueAsyncResultPoolValue>();
         _parent = parent;
@@ -95,32 +98,34 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
 
     protected override void Dispose(bool disposing)
     {
-        if (!_disposed)
+        if (_disposed)
         {
-            _logger.LogTrace($"Dispose start Id:{Id} {CreatedApartmentType}");
-            if (disposing)
-            {
-            }
-
-            if (_rtwqAsyncResult != null)
-            {
-                //STAから呼ばれたときはMTAに移動して解放する
-                MTAExecuter.Invoke(_logger, () => {
-                    var count = Marshal.FinalReleaseComObject(_rtwqAsyncResult);
-                    _logger.LogTrace($"FinalReleaseComObject {count} {Id}");
-                });
-            }
-
-            _disposed = true;
-            _logger.LogTrace($"Dispose end Id:{Id} {CreatedApartmentType}");
+            _logger.LogWarning($"already Disposed Id:{Id} {CreatedApartmentType}");
+            return;
         }
+
+        _logger.LogTrace($"Dispose start Id:{Id} {CreatedApartmentType}");
+        if (disposing)
+        {
+        }
+
+        if (_rtwqAsyncResult != null)
+        {
+            //TODO GeneratedComInterfaceでimportしたものをreleaseする方法？ FinalReleaseComObjectだとエラーになる
+
+            _rtwqAsyncResult = null;
+        }
+
+        _disposed = true;
+        _logger.LogTrace($"Dispose end Id:{Id} {CreatedApartmentType}");
     }
 
     internal void Initialize(
         uint flags,
         RTWorkQ.WorkQueueId queue,
         Action action,
-        Action<Exception?, CancellationToken>? afterAction = default
+        Action<Exception?, CancellationToken>? afterAction = default,
+        bool completeOnCancel = false
     )
     {
         _key = RTWorkQ.RtWorkItemKey.None;
@@ -132,36 +137,64 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
         _workQueueId = queue;
         _action = action;
         _afterAction = afterAction;
+        _completeOnCancel = completeOnCancel;
     }
 
-    protected override void InvokeCore(bool ignore)
+    internal override void Free()
+    {
+        base.Free();
+
+        _key = RTWorkQ.RtWorkItemKey.None;
+        _ct = CancellationToken.None;
+
+        RtwqAsyncResult.SetStatus(0);
+
+        _flags = 0;
+        _workQueueId = RTWorkQ.WorkQueueId.None;
+        _action = null;
+        _afterAction = null;
+        _completeOnCancel = false;
+    }
+
+    protected override void InvokeCore(RTWorkQ.IRtwqAsyncResult asyncResult, bool ignore)
     {
         var apartmentType = ApartmentType.GetApartmentType();
 
-        _logger.LogTrace($"RtwqAsyncCallback.Invoke Id:{Id} {CreatedApartmentType} {Status} / {apartmentType}");
+        _logger.LogTrace($"RtwqAsyncCallback.Invoke Id:[{Id}] {CreatedApartmentType} {Status} / {apartmentType}");
+
+        if (ignore && _completeOnCancel)
+        {
+            _logger.LogTrace($"RtwqAsyncCallback.Invoke skip Id:[{Id}] {CreatedApartmentType}");
+            return;
+        }
 
         Exception? error = null;
         var afterAction = _afterAction;
 
         try
         {
-            if (ignore)
+            if (!ignore)
             {
-                _logger.LogTrace($"RtwqAsyncCallback.Invoke skip Id:{Id} {CreatedApartmentType}");
-                return;
+                _logger.LogTrace($"_func.invoke Id:[{Id}] {CreatedApartmentType}");
+                _action?.Invoke();
+                _logger.LogTrace($"_func.invoke Id:[{Id}] {CreatedApartmentType} ok.");
+                RanToCompletion();
+                RtwqAsyncResult.SetStatus(0);
             }
+            else
+            {
+                _logger.LogTrace($"canceled Id:[{Id}] {CreatedApartmentType}");
 
-            _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType}");
-            _action?.Invoke();
-            _logger.LogTrace($"_func.invoke Id:{Id} {CreatedApartmentType} ok.");
-            RanToCompletion();
+                Canceled();
 
-            //TODO Ajailになってないらしい？　STAから呼ぶと失敗、MAINSTAは成功する。　setしても使ってないので、不要にする？
-            RtwqAsyncResult.SetStatus(0);
+                RtwqAsyncResult.SetStatus(
+                    unchecked((int)0x80004004) // E_ABORT
+                );
+            }
         }
         catch (Exception e)
         {
-            _logger.LogError(e, $"_func.failed Id:{Id} {CreatedApartmentType}");
+            _logger.LogError(e, $"_func.failed Id:[{Id}] {CreatedApartmentType}");
             error = e;
             Faulted();
 
@@ -169,76 +202,87 @@ internal class RTWorkQueueAsyncResultPoolValue : PoolValue
                 unchecked((int)0x8000FFFF) // E_UNEXPECTED
             );
         }
-        finally
-        {
-            _parent.ReleaseAsyncResult(this);
-        }
 
-        //TODO 続きはRtwqInvokeCallbackが良いか？
         try
         {
-            _logger.LogTrace("afterAction.Invoke");
-            afterAction?.Invoke(error, CancellationToken.None);
+            _logger.LogTrace($"afterAction.Invoke Id:[{Id}]");
+            afterAction?.Invoke(error, ignore ? _ct : CancellationToken.None);
         }
         catch (Exception e)
         {
-            _logger.LogError(e, $"afterAction.Invoke failed Id:{Id} {CreatedApartmentType} {_key.Key}.");
+            _logger.LogError(e, $"afterAction.Invoke failed Id:[{Id}] {CreatedApartmentType} {_key.Key}.");
+        }
+        finally
+        {
+            _parent.ReleaseAsyncResult(this);
         }
     }
 
     protected override void CancelCore(bool ignore)
     {
+        //TODO InvokeCoreとCancelCoreが同時に動いても問題ないようにする必要アリ？
         var apartmentType = ApartmentType.GetApartmentType();
 
-        _logger.LogTrace($"RtwqAsyncCallback.Cancel Id:{Id} {CreatedApartmentType} {Status} / {apartmentType}");
+        _logger.LogTrace($"RtwqAsyncCallback.Cancel Id:[{Id}] {CreatedApartmentType} {Status} / {apartmentType}");
+
+        if (ignore)
+        {
+            _logger.LogTrace($"RtwqAsyncCallback.Cancel skip Id:[{Id}] {CreatedApartmentType}");
+            return;
+        }
 
         var afterAction = _afterAction;
 
         try
         {
-            if (ignore)
-            {
-                _logger.LogTrace($"RtwqAsyncCallback.Cancel skip Id:{Id} {CreatedApartmentType}");
-                return;
-            }
-
             if (_key.Key != RTWorkQ.RtWorkItemKey.None.Key)
             {
-                _logger.LogTrace($"RtwqCancelWorkItem Id:{Id} {CreatedApartmentType} {_key.Key}.");
+                _logger.LogTrace($"RtwqCancelWorkItem Id:[{Id}] {CreatedApartmentType} {_key.Key}.");
                 //TODO RtwqCancelWorkItemするとInvokeに移るので、そちらでReleaseした方がよいかも？
                 Marshal.ThrowExceptionForHR(_key.RtwqCancelWorkItem());
-                _logger.LogTrace($"RtwqCancelWorkItem Id:{Id} {CreatedApartmentType} {_key.Key} ok.");
+                _logger.LogTrace($"RtwqCancelWorkItem Id:[{Id}] {CreatedApartmentType} {_key.Key} ok.");
             }
 
-            Canceled();
+            if (_completeOnCancel)
+            {
+                _logger.LogTrace($"canceled Id:[{Id}] {CreatedApartmentType}");
 
-            RtwqAsyncResult.SetStatus(
-                unchecked((int)0x80004004) // E_ABORT
-            );
+                Canceled();
+
+                RtwqAsyncResult.SetStatus(
+                    unchecked((int)0x80004004) // E_ABORT
+                );
+            }
         }
         catch (COMException e) when (e.HResult == unchecked((int)0xC00D36D5)) //E_NOT_FOUND
         {
             //先に完了している場合は何もしない
-            _logger.LogDebug($"already invoked Id:{Id} {CreatedApartmentType} {_key.Key} {Status}.");
+            _logger.LogDebug($"already invoked Id:[{Id}] {CreatedApartmentType} {_key.Key} {Status}.");
         }
         catch (Exception e)
         {
-            _logger.LogError(e, $"failed Id:{Id} {CreatedApartmentType} {_key.Key}.");
+            _logger.LogError(e, $"failed Id:[{Id}] {CreatedApartmentType} {_key.Key}.");
 
             RtwqAsyncResult.SetStatus(
                 unchecked((int)0x8000FFFF) // E_UNEXPECTED
             );
         }
 
-        //TODO 続きはRtwqInvokeCallbackが良いか？
-        try
+        if (_completeOnCancel)
         {
-            _logger.LogTrace("afterAction.Invoke");
-            afterAction?.Invoke(null, _ct);
-        }
-        catch (Exception e)
-        {
-            _logger.LogError(e, $"afterAction.Invoke failed Id:{Id} {CreatedApartmentType} {_key.Key}.");
+            try
+            {
+                _logger.LogTrace($"afterAction.Invoke completeOnCancel Id:[{Id}]");
+                afterAction?.Invoke(null, _ct);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, $"afterAction.Invoke failed Id:[{Id}] {CreatedApartmentType} {_key.Key}.");
+            }
+            finally
+            {
+                _parent.ReleaseAsyncResult(this);
+            }
         }
     }
 

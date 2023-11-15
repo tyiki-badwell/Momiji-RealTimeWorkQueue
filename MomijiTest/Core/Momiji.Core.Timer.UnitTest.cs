@@ -1,70 +1,98 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Xunit;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Momiji.Core.Timer;
 
-public class WaitableTimerTest
+[TestClass]
+public class WaitableTimerTest : IDisposable
 {
     private const int TIMES = 100;
     private const int INTERVAL = 5_000_0;
 
-    private static ILoggerFactory CreateLoggerFactory()
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger _logger;
+
+    public WaitableTimerTest()
     {
-        return LoggerFactory.Create(builder =>
+        var configuration = CreateConfiguration(/*usageClass, 0, taskId*/);
+
+        _loggerFactory = LoggerFactory.Create(builder =>
         {
-            builder.AddFilter("Momiji", LogLevel.Trace);
+            builder.AddConfiguration(configuration);
+
+            builder.AddFilter("Momiji", LogLevel.Warning);
+            builder.AddFilter("Momiji.Core.Cache", LogLevel.Information);
+            builder.AddFilter("Momiji.Core.RTWorkQueue", LogLevel.Information);
             builder.AddFilter("Microsoft", LogLevel.Warning);
             builder.AddFilter("System", LogLevel.Warning);
+
             builder.AddConsole();
             builder.AddDebug();
         });
+
+        _logger = _loggerFactory.CreateLogger<WaitableTimerTest>();
     }
-    private static void PrintResult(
-        ConcurrentQueue<(string, long)> list,
-        ILogger logger
+
+    public void Dispose()
+    {
+        _loggerFactory.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    private static IConfiguration CreateConfiguration(string usageClass = "", int basePriority = 0, int taskId = 0)
+    {
+        var configuration =
+            new ConfigurationBuilder()
+            .AddJsonFile("appsettings.json")
+            .Build();
+
+        var section = configuration.GetSection("Momiji.Core.WorkQueue.WorkQueueManager");
+
+        if (usageClass != "")
+        {
+            section["UsageClass"] = usageClass;
+        }
+
+        if (basePriority != 0)
+        {
+            section["BasePriority"] = basePriority.ToString();
+        }
+
+        if (taskId != 0)
+        {
+            section["TaskId"] = taskId.ToString();
+        }
+
+        return configuration;
+    }
+
+    private void PrintResult(
+        ConcurrentQueue<(string, long)> list
     )
     {
         {
             var (tag, time) = list.ToList()[^1];
-            logger.LogInformation($"LAST: {tag}\t{(double)time / 10000}");
+            _logger.LogInformation($"LAST: {tag}\t{(double)time / 10000}");
         }
 
         foreach (var (tag, time) in list)
         {
-            logger.LogInformation($"{tag}\t{(double)time / 10000}");
+            _logger.LogInformation($"{tag}\t{(double)time / 10000}");
         }
     }
 
-    [Fact]
-    public void Test1_1()
-    {
-        Test1Impl(true, true);
-    }
-
-    [Fact]
-    public void Test1_2()
-    {
-        Test1Impl(true, false);
-    }
-    [Fact]
-    public void Test1_3()
-    {
-        Test1Impl(false, true);
-    }
-    [Fact]
-    public void Test1_4()
-    {
-        Test1Impl(false, false);
-    }
-
-    private static void Test1Impl(
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(true, true)]
+    public void Test1Impl(
         bool manualReset,
         bool highResolution
     )
     {
-        using var loggerFactory = CreateLoggerFactory();
-        var logger = loggerFactory.CreateLogger("WaitableTimerTest.Test1");
         var list = new ConcurrentQueue<(string, long)>();
 
         var counter = new ElapsedTimeCounter();
@@ -85,29 +113,14 @@ public class WaitableTimerTest
 
             list.Enqueue(($"LAP {(double)(end - start) / 10_000}", counter.ElapsedTicks));
         }
-        PrintResult(list, logger);
+        PrintResult(list);
     }
 
-}
-
-public class WaiterTest
-{
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Test1(bool highResolution)
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void TestWait(bool highResolution)
     {
-        using var loggerFactory = LoggerFactory.Create(builder =>
-        {
-            builder.AddFilter("Momiji", LogLevel.Trace);
-            builder.AddFilter("Microsoft", LogLevel.Warning);
-            builder.AddFilter("System", LogLevel.Warning);
-            builder.AddConsole();
-            builder.AddDebug();
-        });
-
-        var log = loggerFactory.CreateLogger("WaiterTest.Test1");
-
         var counter = new ElapsedTimeCounter();
 
         var sample = 1;
@@ -141,24 +154,13 @@ public class WaiterTest
 
         foreach (var (i, laps, before, after, leftTicks) in list)
         {
-            log.LogInformation($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}\t{leftTicks}");
+            _logger.LogInformation($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}\t{leftTicks}");
         }
     }
 
-    [Fact]
-    public async Task Test2Async()
+    [TestMethod]
+    public async Task TestPeriodicTimerAsync()
     {
-        using var loggerFactory = LoggerFactory.Create(builder =>
-        {
-            builder.AddFilter("Momiji", LogLevel.Trace);
-            builder.AddFilter("Microsoft", LogLevel.Warning);
-            builder.AddFilter("System", LogLevel.Warning);
-            builder.AddConsole();
-            builder.AddDebug();
-        });
-
-        var log = loggerFactory.CreateLogger("WaiterTest.Test2");
-
         var counter = new ElapsedTimeCounter();
 
         var sample = 2;
@@ -184,25 +186,14 @@ public class WaiterTest
 
         foreach (var (i, laps, before, after) in list)
         {
-            log.LogInformation($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}");
+            _logger.LogInformation($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}");
         }
 
     }
 
-    [Fact]
-    public async Task Test3Async()
+    [TestMethod]
+    public async Task TestRegisterWaitForSingleObjectAsync()
     {
-        using var loggerFactory = LoggerFactory.Create(builder =>
-        {
-            builder.AddFilter("Momiji", LogLevel.Trace);
-            builder.AddFilter("Microsoft", LogLevel.Warning);
-            builder.AddFilter("System", LogLevel.Warning);
-            builder.AddConsole();
-            builder.AddDebug();
-        });
-
-        var log = loggerFactory.CreateLogger("WaiterTest.Test3");
-
         var counter = new ElapsedTimeCounter();
 
         var sample = 2;
@@ -236,7 +227,7 @@ public class WaiterTest
 
         foreach (var (i, laps, before, after) in list)
         {
-            log.LogInformation($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}");
+            _logger.LogInformation($"count:{i}\tlaps:{laps}\tbefore:{before}\tafter:{after}\tdiff:{after - before}");
         }
     }
 }

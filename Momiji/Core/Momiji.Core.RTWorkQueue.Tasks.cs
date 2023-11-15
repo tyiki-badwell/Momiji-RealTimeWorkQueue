@@ -1,7 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Momiji.Core.Threading;
 
 namespace Momiji.Core.RTWorkQueue.Tasks;
 public class RTWorkQueueTaskSchedulerManagerException : Exception
@@ -61,15 +60,33 @@ public class RTWorkQueueTaskSchedulerManager : IRTWorkQueueTaskSchedulerManager
 
         if (disposing)
         {
-            foreach (var (_, taskScheduler) in _taskSchedulerMap)
-            {
-                taskScheduler.Dispose();
-            }
-            _taskSchedulerMap.Clear();
+            DisposeAsyncCore().AsTask().Wait();
         }
 
         _disposed = true;
-        _logger.LogTrace("Dispose");
+        _logger.LogTrace("Dispose end");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _shutdown = true;
+
+        await DisposeAsyncCore().ConfigureAwait(false);
+
+        Dispose(false);
+
+        GC.SuppressFinalize(this);
+    }
+
+    protected async virtual ValueTask DisposeAsyncCore()
+    {
+        _logger.LogTrace("DisposeAsync start");
+        foreach (var (_, taskScheduler) in _taskSchedulerMap)
+        {
+            await taskScheduler.DisposeAsync().ConfigureAwait(false);
+        }
+        _taskSchedulerMap.Clear();
+        _logger.LogTrace("DisposeAsync end");
     }
 
     private void CheckShutdown()
@@ -130,7 +147,7 @@ public class RTWorkQueueTaskSchedulerManager : IRTWorkQueueTaskSchedulerManager
     }
 }
 
-internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable
+internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable, IAsyncDisposable
 {
     private readonly IConfiguration _configuration;
     private readonly ILoggerFactory _loggerFactory;
@@ -154,6 +171,11 @@ internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable
         public IRTWorkQueueManager? workQueueManager;
         public IRTWorkQueue? workQueue;
         public IRTWorkQueue? workQueueForLongRunning;
+
+        public WorkQueues Clone()
+        {
+            return (WorkQueues)MemberwiseClone();
+        }
     }
 
     private bool _disposed;
@@ -196,16 +218,46 @@ internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable
 
         if (disposing)
         {
-            lock (_workQueues)
-            {
-                _workQueues.workQueueForLongRunning?.Dispose();
-                _workQueues.workQueue?.Dispose();
-                _workQueues.workQueueManager?.Dispose();
-            }
+            DisposeAsyncCore().AsTask().Wait();
         }
 
         _disposed = true;
-        _logger.LogTrace($"Dispose {_key}");
+        _logger.LogTrace($"Dispose end {_key}");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _shutdown = true;
+
+        await DisposeAsyncCore().ConfigureAwait(false);
+
+        Dispose(false);
+
+        GC.SuppressFinalize(this);
+    }
+
+    protected async virtual ValueTask DisposeAsyncCore()
+    {
+        _logger.LogTrace("DisposeAsync start");
+        WorkQueues temp;
+
+        lock (_workQueues)
+        {
+            temp = _workQueues.Clone();
+
+            _workQueues.workQueueForLongRunning = null;
+            _workQueues.workQueue = null;
+            _workQueues.workQueueManager = null;
+        }
+
+        temp.workQueueForLongRunning?.Dispose();
+        temp.workQueue?.Dispose();
+
+        if (temp.workQueueManager != null)
+        {
+            await temp.workQueueManager.DisposeAsync();
+        }
+        _logger.LogTrace("DisposeAsync end");
     }
 
     private void CheckShutdown()
@@ -228,9 +280,7 @@ internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable
             {
                 if (workQueueManager == null)
                 {
-                    workQueueManager = MTAExecuter.Invoke(_logger, () => { 
-                        return new RTWorkQueueManager(_configuration, _loggerFactory);
-                    });
+                    workQueueManager = new RTWorkQueueManager(_configuration, _loggerFactory);
 
                     workQueues.workQueueManager = workQueueManager;
                 }
@@ -264,15 +314,11 @@ internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable
                 {
                     if (_key.Type != null)
                     {
-                        workQueue = MTAExecuter.Invoke(_logger, () => {
-                            return workQueueManager.CreatePrivateWorkQueue((IRTWorkQueue.WorkQueueType)_key.Type);
-                        });
+                        workQueue = workQueueManager.CreatePrivateWorkQueue((IRTWorkQueue.WorkQueueType)_key.Type);
                     }
                     else
                     {
-                        workQueue = MTAExecuter.Invoke(_logger, () => {
-                            return workQueueManager.CreatePlatformWorkQueue(_key.UsageClass, _key.BasePriority, _key.TaskId);
-                        });
+                        workQueue = workQueueManager.CreatePlatformWorkQueue(_key.UsageClass, _key.BasePriority, _key.TaskId);
                     }
 
                     //TODO serial
@@ -294,25 +340,22 @@ internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable
 
     protected override void QueueTask(Task task)
     {
-        CheckShutdown();
-
         _logger.LogTrace($"QueueTask {task.Id} {task.CreationOptions}");
+
+        CheckShutdown();
 
         var workQueue = GetWorkQueue(((task.CreationOptions & TaskCreationOptions.LongRunning) != 0));
 
-        //TODO IContextCallbackのキャプチャは要る？
-        MTAExecuter.Invoke(_logger, () => {
-            workQueue.PutWorkItem(
-                IRTWorkQueue.TaskPriority.NORMAL,
-                () => {
-                    TryExecuteTask(task);
-                }
-            );
-        });
+        workQueue.PutWorkItem(
+            IRTWorkQueue.TaskPriority.NORMAL,
+            () => {
+                TryExecuteTask(task);
+            }
+        );
     }
 
     protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued) {
-        _logger.LogDebug($"TryExecuteTaskInline {task.Id} {taskWasPreviouslyQueued}");
+        _logger.LogTrace($"TryExecuteTaskInline {task.Id} {taskWasPreviouslyQueued}");
 
         if (taskWasPreviouslyQueued && !TryDequeue(task))
         {
@@ -324,7 +367,7 @@ internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable
 
     protected override bool TryDequeue(Task task)
     {
-        _logger.LogDebug($"TryDequeue {task.Id}");
+        _logger.LogTrace($"TryDequeue {task.Id}");
         //キャンセルは出来ない
         return false;
     }

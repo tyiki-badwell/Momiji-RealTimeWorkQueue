@@ -30,7 +30,7 @@ public class ElapsedTimeCounter
         _startTimestamp = Stopwatch.GetTimestamp();
     }
 
-    public static readonly double TickFrequency = (double)10_000_000 / Stopwatch.Frequency;
+    public static readonly double TickFrequency = (double)TimeSpan.TicksPerSecond / Stopwatch.Frequency;
 
     public static long TimestampToTicks(long timestamp)
     {
@@ -109,15 +109,12 @@ public class Waiter : IDisposable
     public Waiter(ElapsedTimeCounter counter, long intervalTicks, bool highResolution)
     {
         _counter = counter ?? throw new ArgumentNullException(nameof(counter));
-        if (intervalTicks < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(intervalTicks));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(intervalTicks);
+
         _intervalTicks = intervalTicks;
-
         _timer = new WaitableTimer(false, highResolution);
-
         _progressedTicks = _counter.ElapsedTicks;
+
         ProgressedFrames = 0;
     }
 
