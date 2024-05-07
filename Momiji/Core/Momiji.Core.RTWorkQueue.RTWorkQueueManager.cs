@@ -21,15 +21,11 @@ public partial class RTWorkQueuePlatformEventsHandler : IRTWorkQueuePlatformEven
     //TODO これに連動して行うべき動作があるか？
     [ClassInterface(ClassInterfaceType.None)]
     [GeneratedComClass]
-    private partial class RtwqPlatformEvents : RTWorkQ.IRtwqPlatformEvents
+    private partial class RtwqPlatformEvents(
+        ILoggerFactory loggerFactory
+    ) : RTWorkQ.IRtwqPlatformEvents
     {
-        private readonly ILogger<RtwqPlatformEvents> _logger;
-        public RtwqPlatformEvents(
-            ILoggerFactory loggerFactory
-        )
-        {
-            _logger = loggerFactory.CreateLogger<RtwqPlatformEvents>();
-        }
+        private readonly ILogger<RtwqPlatformEvents> _logger = loggerFactory.CreateLogger<RtwqPlatformEvents>();
 
         public int InitializationComplete()
         {

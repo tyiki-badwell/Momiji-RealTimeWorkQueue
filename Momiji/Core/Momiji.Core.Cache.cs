@@ -102,7 +102,7 @@ public abstract class PoolValue<TParam> : IDisposable
     protected abstract void CancelCore(bool ignore);
 }
 
-public class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
+public partial class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
     where TKey : notnull
     where TValue : notnull, PoolValue<TParam>
 {

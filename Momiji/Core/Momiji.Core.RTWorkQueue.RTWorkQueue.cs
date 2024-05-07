@@ -172,21 +172,15 @@ internal partial class RTWorkQueue : IRTWorkQueue
         }
     }
 
-    private class LockToken : IDisposable
+    private partial class LockToken(
+        RTWorkQueue parent,
+        ILoggerFactory loggerFactory
+    ) : IDisposable
     {
-        private readonly ILogger<LockToken> _logger;
+        private readonly ILogger<LockToken> _logger = loggerFactory.CreateLogger<LockToken>();
+        private readonly RTWorkQueue _parent = parent;
+
         private bool _disposed;
-
-        private readonly RTWorkQueue _parent;
-
-        public LockToken(
-            RTWorkQueue parent,
-            ILoggerFactory loggerFactory
-        )
-        {
-            _parent = parent;
-            _logger = loggerFactory.CreateLogger<LockToken>();
-        }
 
         ~LockToken()
         {

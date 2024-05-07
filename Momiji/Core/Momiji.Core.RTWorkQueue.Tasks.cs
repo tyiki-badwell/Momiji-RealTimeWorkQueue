@@ -14,7 +14,7 @@ public class RTWorkQueueTaskSchedulerManagerException : Exception
     }
 }
 
-public class RTWorkQueueTaskSchedulerManager : IRTWorkQueueTaskSchedulerManager
+public partial class RTWorkQueueTaskSchedulerManager : IRTWorkQueueTaskSchedulerManager
 {
     private readonly IConfiguration _configuration;
     private readonly ILoggerFactory _loggerFactory;
@@ -147,7 +147,7 @@ public class RTWorkQueueTaskSchedulerManager : IRTWorkQueueTaskSchedulerManager
     }
 }
 
-internal class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable, IAsyncDisposable
+internal partial class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable, IAsyncDisposable
 {
     private readonly IConfiguration _configuration;
     private readonly ILoggerFactory _loggerFactory;

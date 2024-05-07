@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace Momiji.Core.Timer;
 
 [TestClass]
-public class WaitableTimerTest : IDisposable
+public partial class WaitableTimerTest : IDisposable
 {
     private const int TIMES = 100;
     private const int INTERVAL = 5_000_0;
