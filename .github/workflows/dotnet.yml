@@ -12,16 +12,16 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 8.x.x
+        dotnet-version: 9.x.x
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
       run: dotnet build --no-restore
     - name: Test-x64
       run: dotnet test --no-build --verbosity normal
-#    - name: Test-x86
-#      run: dotnet test --no-build --verbosity normal --arch x86
+    - name: Test-x86
+      run: dotnet test --no-build --verbosity normal --arch x86
