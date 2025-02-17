@@ -44,7 +44,7 @@ public class ElapsedTimeCounter
     public long NowTicks => TimestampToTicks(Stopwatch.GetTimestamp());
 }
 
-public class WaitableTimer : WaitHandle
+public partial class WaitableTimer : WaitHandle
 {
     public WaitableTimer(
         bool manualReset,
@@ -93,7 +93,7 @@ public class WaitableTimer : WaitHandle
 }
 
 
-public class Waiter : IDisposable
+public partial class Waiter : IDisposable
 {
     private bool _disposed;
     private readonly ElapsedTimeCounter _counter;

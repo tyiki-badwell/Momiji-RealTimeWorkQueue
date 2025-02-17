@@ -10,7 +10,7 @@ using Momiji.Core.Timer;
 namespace Momiji.Core.RTWorkQueue;
 
 [TestClass]
-public class RTWorkQueueTest : IDisposable
+public partial class RTWorkQueueTest : IDisposable
 {
     private const int TIMES = 1000;
     private const int SUB_TIMES = 100000;
@@ -1232,9 +1232,7 @@ public class RTWorkQueueTest : IDisposable
     public async Task TestRegisterWorkQueueWithMMCSS(
         string usageClass1,
         string usageClass2,
-        IRTWorkQueue.WorkQueueType? type = null,
-        bool serial = false,
-        bool argumentException = false
+        IRTWorkQueue.WorkQueueType? type = null
     )
     {
         using var workQueue =

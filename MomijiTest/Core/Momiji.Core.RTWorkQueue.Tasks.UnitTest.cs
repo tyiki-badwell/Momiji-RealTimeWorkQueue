@@ -10,7 +10,7 @@ using Momiji.Internal.Debug;
 namespace Momiji.Core.RTWorkQueue.Tasks;
 
 [TestClass]
-public class RTWorkQueueTasksTest : IDisposable
+public partial class RTWorkQueueTasksTest : IDisposable
 {
     private const int TIMES = 10000;
     private const int SUB_TIMES = 100000;

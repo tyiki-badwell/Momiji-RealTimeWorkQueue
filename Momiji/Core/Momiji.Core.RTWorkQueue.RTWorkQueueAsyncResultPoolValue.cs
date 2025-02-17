@@ -37,15 +37,11 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
 
     [ClassInterface(ClassInterfaceType.None)]
     [GeneratedComClass]
-    private partial class RtwqAsyncCallbackImpl : RTWorkQ.IRtwqAsyncCallback
+    private partial class RtwqAsyncCallbackImpl(
+        RTWorkQueueAsyncResultPoolValue parent
+    ) : RTWorkQ.IRtwqAsyncCallback
     {
-        private readonly RTWorkQueueAsyncResultPoolValue _parent;
-        public RtwqAsyncCallbackImpl(
-            RTWorkQueueAsyncResultPoolValue parent
-        )
-        {
-            _parent = parent;        
-        }
+        private readonly RTWorkQueueAsyncResultPoolValue _parent = parent;
 
         public int GetParameters(
             ref uint pdwFlags,

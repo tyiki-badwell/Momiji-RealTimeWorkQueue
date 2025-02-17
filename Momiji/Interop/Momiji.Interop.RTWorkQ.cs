@@ -163,7 +163,7 @@ internal static partial class NativeMethodsExtensions
 }
 internal static partial class NativeMethods
 {
-    internal sealed class JoinKey : SafeHandleZeroOrMinusOneIsInvalid
+    internal sealed partial class JoinKey : SafeHandleZeroOrMinusOneIsInvalid
     {
         private readonly WorkQueueId _workQueueId;
         public JoinKey(
@@ -591,7 +591,7 @@ internal static partial class NativeMethodsExtensions
 }
 internal static partial class NativeMethods
 {
-    internal sealed class DeadlineKey : SafeHandleZeroOrMinusOneIsInvalid
+    internal sealed partial class DeadlineKey : SafeHandleZeroOrMinusOneIsInvalid
     {
         public DeadlineKey() : base(true)
         {
@@ -658,7 +658,7 @@ internal static partial class NativeMethods
 }
 internal static partial class NativeMethods
 {
-    internal sealed class PeriodicCallbackKey : SafeHandleZeroOrMinusOneIsInvalid
+    internal sealed partial class PeriodicCallbackKey : SafeHandleZeroOrMinusOneIsInvalid
     {
         public PeriodicCallbackKey() : base(true)
         {

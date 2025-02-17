@@ -41,12 +41,10 @@ public abstract class InternalGCHandleBuffer<T> : IDisposable where T : notnull
     }
 }
 
-public class PinnedBuffer<T> : InternalGCHandleBuffer<T> where T : notnull
+public partial class PinnedBuffer<T>(
+    T buffer
+) : InternalGCHandleBuffer<T>(buffer, GCHandleType.Pinned) where T : notnull
 {
-    public PinnedBuffer(T buffer): base(buffer, GCHandleType.Pinned)
-    {
-    }
-
     [NotNull]
     public T Target
     {
@@ -65,12 +63,10 @@ public class PinnedBuffer<T> : InternalGCHandleBuffer<T> where T : notnull
     public int SizeOf => Marshal.SizeOf<T>();
 }
 
-public class PinnedDelegate<T> : InternalGCHandleBuffer<T> where T : notnull, Delegate
+public partial class PinnedDelegate<T>(
+    T buffer
+) : InternalGCHandleBuffer<T>(buffer, GCHandleType.Normal) where T : notnull, Delegate
 {
-    public PinnedDelegate(T buffer) : base(buffer, GCHandleType.Normal)
-    {
-    }
-
     public nint FunctionPointer
     {
         get
