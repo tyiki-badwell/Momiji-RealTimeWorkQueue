@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Momiji.Internal.Log;
 
 namespace Momiji.Core.Cache;
 
@@ -18,12 +19,12 @@ public abstract class PoolValue<TParam> : IDisposable
         Created
     }
 
-    private int _status = (int)PoolValueStatus.Created;
+    private PoolValueStatus _status = PoolValueStatus.Created;
 
     public PoolValueStatus Status
     {
-        get => (PoolValueStatus)_status;
-        private set => _status = (int)value;
+        get => _status;
+        private set => _status = value;
     }
 
     internal PoolValue()
@@ -75,7 +76,7 @@ public abstract class PoolValue<TParam> : IDisposable
 
     public void Invoke(TParam param)
     {
-        if ((int)PoolValueStatus.WaitingToRun == Interlocked.CompareExchange(ref _status, (int)PoolValueStatus.Running, (int)PoolValueStatus.WaitingToRun))
+        if (PoolValueStatus.WaitingToRun == Interlocked.CompareExchange(ref _status, PoolValueStatus.Running, PoolValueStatus.WaitingToRun))
         {
             InvokeCore(param, false);
         }
@@ -89,7 +90,7 @@ public abstract class PoolValue<TParam> : IDisposable
 
     public void Cancel()
     {
-        if ((int)PoolValueStatus.WaitingToRun == Interlocked.CompareExchange(ref _status, (int)PoolValueStatus.Canceling, (int)PoolValueStatus.WaitingToRun))
+        if (PoolValueStatus.WaitingToRun == Interlocked.CompareExchange(ref _status, PoolValueStatus.Canceling, PoolValueStatus.WaitingToRun))
         {
             CancelCore(false);
         }
@@ -135,7 +136,7 @@ public partial class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
             item = Add();
         }
 
-        _logger.LogTrace($"busy Id:[{item.Item1}]");
+        _logger.LogCacheKey(LogLevel.Trace, "busy", item.Item1);
         _busy.TryAdd(item.Item1, item.Item2);
         item.Item2.Rent();
 
@@ -145,7 +146,7 @@ public partial class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
     private (TKey, TValue) Add()
     {
         var (key, value) = _allocator();
-        _logger.LogTrace($"create Id:[{key}]");
+        _logger.LogCacheKey(LogLevel.Trace, "create", key);
         _cache.Push((key, value));
 
         return (key, value);
@@ -155,13 +156,13 @@ public partial class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
     {
         if (_busy.TryRemove(key, out var value))
         {
-            _logger.LogTrace($"release Id:[{key}]");
+            _logger.LogCacheKey(LogLevel.Trace, "release", key);
             value.Free();
             _avail.Push((key, value));
         }
         else
         {
-            _logger.LogWarning($"not busy Id:[{key}]");
+            _logger.LogCacheKey(LogLevel.Warning, "not busy", key);
         }
     }
 
@@ -202,28 +203,28 @@ public partial class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
 
     protected async virtual ValueTask DisposeAsyncCore()
     {
-        _logger.LogTrace("DisposeAsync start");
+        _logger.LogWithLine(LogLevel.Trace, "DisposeAsync start");
 
-        _logger.LogDebug($"busy items {_busy.Count}");
+        _logger.LogWithLine(LogLevel.Debug, "busy items", _busy.Count);
 
         while (IsBusy())
         {
             foreach (var key in _busy.Keys)
             {
-                _logger.LogDebug($"try cancel busy key Id:[{key}]");
+                _logger.LogCacheKey(LogLevel.Debug, "try cancel busy", key);
                 if (_busy.TryGetValue(key, out var result))
                 {
-                    _logger.LogDebug($"Id:[{key}] {result.Status}");
+                    _logger.LogCacheKey(LogLevel.Debug, "try cancel", key, result.Status);
                     result.Cancel();
                 }
             }
 
-            _logger.LogDebug($"wait ...");
+            _logger.LogWithLine(LogLevel.Debug, "wait ...");
             await Task.Delay(10).ConfigureAwait(false);
         }
 
-        _logger.LogDebug($"avail items {_avail.Count}");
-        _logger.LogDebug($"cache items {_cache.Count}");
+        _logger.LogWithLine(LogLevel.Debug, "avail items", _avail.Count);
+        _logger.LogWithLine(LogLevel.Debug, "cache items", _cache.Count);
 
         _avail.Clear();
 
@@ -232,7 +233,7 @@ public partial class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
             result.Item2.Dispose();
         }
         _cache.Clear();
-        _logger.LogTrace("DisposeAsync end");
+        _logger.LogWithLine(LogLevel.Trace, "DisposeAsync end");
     }
 
     public bool IsBusy()

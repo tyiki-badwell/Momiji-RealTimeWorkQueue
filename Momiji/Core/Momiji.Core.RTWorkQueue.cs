@@ -8,7 +8,7 @@ public interface IRTWorkQueuePlatformEventsHandler : IDisposable
 
 public interface IRTWorkQueueTaskSchedulerManager : IDisposable, IAsyncDisposable
 {
-    public TaskScheduler GetTaskScheduler(
+    TaskScheduler GetTaskScheduler(
         string usageClass = "",
         IRTWorkQueue.WorkQueueType? type = null,
         bool serial = false,
@@ -16,35 +16,35 @@ public interface IRTWorkQueueTaskSchedulerManager : IDisposable, IAsyncDisposabl
         int taskId = 0
     );
 
-    public void ShutdownTaskScheduler(
+    void ShutdownTaskScheduler(
         TaskScheduler taskScheduler
     );
 }
 
 public interface IRTWorkQueueManager : IDisposable, IAsyncDisposable
 {
-    public IRTWorkQueue CreatePlatformWorkQueue(
+    IRTWorkQueue CreatePlatformWorkQueue(
         string usageClass = "",
         IRTWorkQueue.TaskPriority basePriority = IRTWorkQueue.TaskPriority.NORMAL,
         int taskId = 0
     );
-    public IRTWorkQueue CreatePrivateWorkQueue(
+    IRTWorkQueue CreatePrivateWorkQueue(
         IRTWorkQueue.WorkQueueType type
     );
 
-    public IRTWorkQueue CreateSerialWorkQueue(
+    IRTWorkQueue CreateSerialWorkQueue(
         IRTWorkQueue workQueue
     );
 
-    public void RegisterMMCSS(
+    void RegisterMMCSS(
         string usageClass,
         IRTWorkQueue.TaskPriority basePriority = IRTWorkQueue.TaskPriority.NORMAL,
         int taskId = 0
     );
 
-    public void UnregisterMMCSS();
+    void UnregisterMMCSS();
 
-    public void PutWaitingWorkItem(
+    void PutWaitingWorkItem(
         IRTWorkQueue.TaskPriority priority,
         WaitHandle waitHandle,
         Action action,
@@ -52,34 +52,34 @@ public interface IRTWorkQueueManager : IDisposable, IAsyncDisposable
         CancellationToken ct = default
     );
 
-    public Task PutWaitingWorkItemAsync(
+    Task PutWaitingWorkItemAsync(
         IRTWorkQueue.TaskPriority priority,
         WaitHandle waitHandle,
         Action action,
         CancellationToken ct = default
     );
 
-    public void ScheduleWorkItem(
+    void ScheduleWorkItem(
         long timeout,
         Action action,
         Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     );
 
-    public Task ScheduleWorkItemAsync(
+    Task ScheduleWorkItemAsync(
         long timeout,
         Action action,
         CancellationToken ct = default
     );
 
-    public IDisposable AddPeriodicCallback(
+    IDisposable AddPeriodicCallback(
         Action action
     );
 }
 
 public interface IRTWorkQueue : IDisposable
 {
-    public enum TaskPriority : int
+    enum TaskPriority : int
     {
         LOW = -1,
         NORMAL = 0,
@@ -87,48 +87,48 @@ public interface IRTWorkQueue : IDisposable
         CRITICAL = 2
     }
 
-    public enum WorkQueueType : int
+    enum WorkQueueType : int
     {
         Standard = 0,
         Window = 1,
         MultiThreaded = 2
     }
 
-    public void PutWorkItem(
+    void PutWorkItem(
         TaskPriority priority,
         Action action,
         Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     );
 
-    public Task PutWorkItemAsync(
+    Task PutWorkItemAsync(
         TaskPriority priority,
         Action action, 
         CancellationToken ct = default
     );
 
-    public IDisposable Lock();
+    IDisposable Lock();
 
-    public SafeHandle Join(
+    SafeHandle Join(
         SafeHandle handle
     );
 
-    public void SetDeadline(
+    void SetDeadline(
         long deadlineInHNS,
         long preDeadlineInHNS = 0
     );
 
-    public int GetMMCSSTaskId();
-    public TaskPriority GetMMCSSPriority();
-    public string GetMMCSSClass();
+    int GetMMCSSTaskId();
+    TaskPriority GetMMCSSPriority();
+    string GetMMCSSClass();
 
-    public Task RegisterMMCSSAsync(
+    Task RegisterMMCSSAsync(
         string usageClass,
         TaskPriority basePriority,
         int taskId
     );
 
-    public Task UnregisterMMCSSAsync();
+    Task UnregisterMMCSSAsync();
 
-    public void SetLongRunning(bool enable);
+    void SetLongRunning(bool enable);
 }

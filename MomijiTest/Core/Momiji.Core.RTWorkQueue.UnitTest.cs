@@ -29,8 +29,8 @@ public partial class RTWorkQueueTest : IDisposable
             builder.AddConfiguration(configuration);
 
             builder.AddFilter("Momiji", LogLevel.Warning);
-            builder.AddFilter("Momiji.Core.Cache", LogLevel.Information);
-            builder.AddFilter("Momiji.Core.RTWorkQueue", LogLevel.Information);
+            builder.AddFilter("Momiji.Core.Cache", LogLevel.Trace);
+            builder.AddFilter("Momiji.Core.RTWorkQueue", LogLevel.Trace);
             builder.AddFilter("Microsoft", LogLevel.Warning);
             builder.AddFilter("System", LogLevel.Warning);
 

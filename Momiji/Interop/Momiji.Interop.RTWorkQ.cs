@@ -101,6 +101,11 @@ internal static partial class NativeMethods
         internal uint Id => id;
 
         internal static WorkQueueId None => default;
+        public readonly override string ToString()
+        {
+            return
+                $"{id:X}";
+        }
     }
 }
 internal static partial class NativeMethods
