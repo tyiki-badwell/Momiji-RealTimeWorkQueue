@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Momiji.Sample.WASAPI.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Momiji.Sample.WASAPI"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Momiji.Sample.WASAPI"
+    Closed="{x:Bind Path=ViewModel.Closed}">
+
+    <StackPanel>
+        <ListBox ItemsSource="{x:Bind Path=ViewModel.Model.DeviceInformationList}" SelectionChanged="{x:Bind Path=ViewModel.SelectionChanged}" DisplayMemberPath="Name"/>
+        <TextBlock Text="{x:Bind Path=ViewModel.Model.SelectedDeviceInformationText,Mode=OneWay}" />
+
+        <Button Content="Play" Click="{x:Bind Path=ViewModel.Play}"/>
+        <Button Content="Stop" Click="{x:Bind Path=ViewModel.Stop}"/>
+
+    </StackPanel>
+</Window>
