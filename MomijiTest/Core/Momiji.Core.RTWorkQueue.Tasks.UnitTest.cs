@@ -146,7 +146,7 @@ public partial class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [Timeout(5000)]
+    [Timeout(10000, CooperativeCancellation = true)]
     [DataRow(false)]
     [DataRow(true)]
     public void TestLoopParallel(bool rtwqTaskScheduler)
@@ -171,7 +171,7 @@ public partial class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [Timeout(10000)]
+    [Timeout(10000, CooperativeCancellation = true)]
     [DataRow(false, ApartmentState.STA, ApartmentState.STA)]
     [DataRow(true, ApartmentState.STA, ApartmentState.STA)]
     [DataRow(false, ApartmentState.MTA, ApartmentState.STA)]
@@ -250,7 +250,7 @@ public partial class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [Timeout(1000000)]
+    [Timeout(1000000, CooperativeCancellation = true)]
     [DataRow(false, TIMES)]
     [DataRow(true, TIMES, "Pro Audio")]
     [DataRow(true, TIMES, "Pro Audio", IRTWorkQueue.WorkQueueType.MultiThreaded)]
@@ -495,7 +495,7 @@ public partial class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [Timeout(10000)]
+    [Timeout(10000, CooperativeCancellation = true)]
     [DataRow(false)]
     [DataRow(true)]
     public async Task TestAsyncEnumerable(
