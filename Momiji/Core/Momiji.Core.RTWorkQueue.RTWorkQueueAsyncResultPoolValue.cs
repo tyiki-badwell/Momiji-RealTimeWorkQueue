@@ -27,7 +27,8 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
     private uint _flags;
     private RTWorkQ.WorkQueueId _workQueueId;
 
-    private Action? _action;
+    private Action<object?>? _action;
+    private object? _state;
     
     private RTWorkQ.RtWorkItemKey _key;
     private CancellationToken _ct;
@@ -117,10 +118,11 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "Dispose end", Id, CreatedApartmentType);
     }
 
-    internal void Initialize(
+    internal void Initialize<TState>(
         uint flags,
-        RTWorkQ.WorkQueueId queue,
-        Action action,
+        RTWorkQ.WorkQueueId workQueueId,
+        Action<TState?> action,
+        TState? state,
         Action<Exception?, CancellationToken>? afterAction = default,
         bool completeOnCancel = false
     )
@@ -131,15 +133,19 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         RtwqAsyncResult.SetStatus(0);
 
         _flags = flags;
-        _workQueueId = queue;
-        _action = action;
+        _workQueueId = workQueueId;
+        _action = stateObj => action((TState?)stateObj);
+        _state = state;
         _afterAction = afterAction;
         _completeOnCancel = completeOnCancel;
     }
 
-    internal override void Free()
+    internal override bool ToFree()
     {
-        base.Free();
+        if (!base.ToFree())
+        {
+            return false;
+        }
 
         _key = RTWorkQ.RtWorkItemKey.None;
         _ct = CancellationToken.None;
@@ -148,9 +154,12 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
 
         _flags = 0;
         _workQueueId = RTWorkQ.WorkQueueId.None;
-        _action = null;
-        _afterAction = null;
+        _action = default;
+        _state = default;
+        _afterAction = default;
         _completeOnCancel = false;
+
+        return true;
     }
 
     protected override void InvokeCore(RTWorkQ.IRtwqAsyncResult asyncResult, bool ignore)
@@ -159,10 +168,13 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
 
         _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "RtwqAsyncCallback.Invoke", Id, CreatedApartmentType, Status, apartmentType);
 
-        if (ignore && _completeOnCancel)
+        if (_completeOnCancel)
         {
-            _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "RtwqAsyncCallback.Invoke skip", Id, CreatedApartmentType);
-            return;
+            if (ignore)
+            {
+                _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "RtwqAsyncCallback.Invoke skip", Id, CreatedApartmentType);
+                return;
+            }
         }
 
         Exception? error = null;
@@ -174,16 +186,16 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
             {
                 _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "_func.invoke", Id, CreatedApartmentType);
                 //TODO ここで実行コンテキスト切り替え？
-                _action?.Invoke();
+                _action?.Invoke(_state);
                 _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "_func.invoke ok", Id, CreatedApartmentType);
-                RanToCompletion();
+                ToRunToCompletion();
                 RtwqAsyncResult.SetStatus(0);
             }
             else
             {
                 _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "canceled", Id, CreatedApartmentType);
 
-                Canceled();
+                ToCanceled();
 
                 RtwqAsyncResult.SetStatus(
                     unchecked((int)0x80004004) // E_ABORT
@@ -194,7 +206,7 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
         {
             _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Error, e, "_func.failed", Id, CreatedApartmentType);
             error = e;
-            Faulted();
+            ToFaulted();
 
             RtwqAsyncResult.SetStatus(
                 unchecked((int)0x8000FFFF) // E_UNEXPECTED
@@ -247,7 +259,7 @@ internal partial class RTWorkQueueAsyncResultPoolValue : PoolValue<RTWorkQ.IRtwq
             {
                 _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "canceled", Id, CreatedApartmentType);
 
-                Canceled();
+                ToCanceled();
 
                 RtwqAsyncResult.SetStatus(
                     unchecked((int)0x80004004) // E_ABORT

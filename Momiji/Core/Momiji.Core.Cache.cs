@@ -13,7 +13,7 @@ public abstract class PoolValue<TParam> : IDisposable
         WaitingToRun,
         Running,
         Canceling,
-        RanToCompletion,
+        RunToCompletion,
         Canceled,
         Faulted,
         Created
@@ -44,60 +44,70 @@ public abstract class PoolValue<TParam> : IDisposable
 
     protected abstract void Dispose(bool disposing);
 
-    internal virtual void Free()
+    internal virtual bool ToFree()
     {
+        //TODO チェック
         Status = PoolValueStatus.Free;
+        return true;
     }
 
-    internal void Rent()
+    internal bool ToRent()
     {
+        //TODO チェック
         Status = PoolValueStatus.Rent;
+        return true;
     }
 
-    internal void WaitingToRun()
+    internal bool ToWaitingToRun()
     {
+        //TODO チェック
         Status = PoolValueStatus.WaitingToRun;
+        return true;
     }
 
-    internal void RanToCompletion()
+    internal bool ToRunning()
     {
-        Status = PoolValueStatus.RanToCompletion;
+        return PoolValueStatus.WaitingToRun == Interlocked.CompareExchange(ref _status, PoolValueStatus.Running, PoolValueStatus.WaitingToRun);
     }
 
-    internal void Canceled()
+    internal bool ToCanceling()
     {
+        return PoolValueStatus.WaitingToRun == Interlocked.CompareExchange(ref _status, PoolValueStatus.Canceling, PoolValueStatus.WaitingToRun);
+    }
+
+    internal bool ToRunToCompletion()
+    {
+        //TODO チェック
+        Status = PoolValueStatus.RunToCompletion;
+        return true;
+    }
+
+    internal bool ToCanceled()
+    {
+        //TODO チェック
         Status = PoolValueStatus.Canceled;
+        return true;
     }
 
-    internal void Faulted()
+    internal bool ToFaulted()
     {
+        //TODO チェック
         Status = PoolValueStatus.Faulted;
+        return true;
     }
 
     public void Invoke(TParam param)
     {
-        if (PoolValueStatus.WaitingToRun == Interlocked.CompareExchange(ref _status, PoolValueStatus.Running, PoolValueStatus.WaitingToRun))
-        {
-            InvokeCore(param, false);
-        }
-        else
-        {
-            InvokeCore(param, true);
-        }
+        var ignore = !ToRunning();
+        InvokeCore(param, ignore);
     }
 
     protected abstract void InvokeCore(TParam param, bool ignore);
 
     public void Cancel()
     {
-        if (PoolValueStatus.WaitingToRun == Interlocked.CompareExchange(ref _status, PoolValueStatus.Canceling, PoolValueStatus.WaitingToRun))
-        {
-            CancelCore(false);
-        }
-        else
-        {
-            CancelCore(true);
-        }
+        var ignore = !ToCanceling();
+        CancelCore(ignore);
     }
 
     protected abstract void CancelCore(bool ignore);
@@ -138,7 +148,7 @@ public partial class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
 
         _logger.LogCacheKey(LogLevel.Trace, "busy", item.Item1);
         _busy.TryAdd(item.Item1, item.Item2);
-        item.Item2.Rent();
+        item.Item2.ToRent();
 
         return item.Item2;
     }
@@ -157,7 +167,7 @@ public partial class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
         if (_busy.TryRemove(key, out var value))
         {
             _logger.LogCacheKey(LogLevel.Trace, "release", key);
-            value.Free();
+            value.ToFree();
             _avail.Push((key, value));
         }
         else
@@ -207,6 +217,8 @@ public partial class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
 
         _logger.LogWithLine(LogLevel.Debug, "busy items", _busy.Count);
 
+        //TODO タイムアウトの仕組み
+        var count = 1000;
         while (IsBusy())
         {
             foreach (var key in _busy.Keys)
@@ -219,8 +231,14 @@ public partial class Pool<TKey, TValue, TParam> : IDisposable, IAsyncDisposable
                 }
             }
 
+            count--;
+            if (count <= 0)
+            {
+                _logger.LogWithLine(LogLevel.Debug, "abort.");
+                break;
+            }
             _logger.LogWithLine(LogLevel.Debug, "wait ...");
-            await Task.Delay(10).ConfigureAwait(false);
+            await Task.Delay(100).ConfigureAwait(false);
         }
 
         _logger.LogWithLine(LogLevel.Debug, "avail items", _avail.Count);

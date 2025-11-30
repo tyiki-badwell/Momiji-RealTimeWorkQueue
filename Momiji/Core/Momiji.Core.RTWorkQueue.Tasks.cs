@@ -117,7 +117,8 @@ public partial class RTWorkQueueTaskSchedulerManager : IRTWorkQueueTaskScheduler
         );
 
         //valueFactory は多重に実行される可能性があるが、RTWorkQueueTaskSchedulerを作っただけではリソース確保はしないので、良しとする
-        return _taskSchedulerMap.GetOrAdd(key, (key) => {
+        return _taskSchedulerMap.GetOrAdd(key, (key) =>
+        {
             return 
                 new RTWorkQueueTaskScheduler(
                     _configuration,
@@ -344,17 +345,19 @@ internal partial class RTWorkQueueTaskScheduler : TaskScheduler, IDisposable, IA
 
         CheckShutdown();
 
-        var workQueue = GetWorkQueue(((task.CreationOptions & TaskCreationOptions.LongRunning) != 0));
+        var workQueue = GetWorkQueue((task.CreationOptions & TaskCreationOptions.LongRunning) != 0);
 
         workQueue.PutWorkItem(
             IRTWorkQueue.TaskPriority.NORMAL,
-            () => {
-                TryExecuteTask(task);
-            }
+            (task) => {
+                TryExecuteTask(task!);
+            },
+            task
         );
     }
 
-    protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued) {
+    protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued)
+    {
         _logger.LogTrace($"TryExecuteTaskInline {task.Id} {taskWasPreviouslyQueued}");
 
         if (taskWasPreviouslyQueued && !TryDequeue(task))

@@ -627,14 +627,14 @@ public partial class WASAPIOut : IDisposable
     {
         Action? put = null;
 
-        void action()
+        void action(Func<nint, uint, uint>? process)
         {
             if (ct.IsCancellationRequested)
             {
                 _logger.LogInformation("canceled.");
                 return;
             }
-            Process(process);
+            Process(process!);
             put!();
         }
 
@@ -644,6 +644,7 @@ public partial class WASAPIOut : IDisposable
                 0,
                 _eventWaitHandle,
                 action,
+                process,
                 null,
                 ct
             );

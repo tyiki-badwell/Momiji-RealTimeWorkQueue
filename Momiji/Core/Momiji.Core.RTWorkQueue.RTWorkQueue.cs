@@ -143,6 +143,7 @@ internal partial class RTWorkQueue : IRTWorkQueue
 
         if (disposing)
         {
+            //TODO 自身のQUEUEに積んだItemのキャンセル＆完了待ちが必要
         }
 
         //TODO STAから呼ばれたときはMTAに移動して解放しないとダメ？
@@ -153,6 +154,7 @@ internal partial class RTWorkQueue : IRTWorkQueue
         {
             try
             {
+                //TODO Queueに積んであってもUnlockが効いてしまうのか要確認
                 Marshal.ThrowExceptionForHR(WorkQueueId.RtwqUnlockWorkQueue());
             }
             catch (Exception e)
@@ -355,7 +357,7 @@ internal partial class RTWorkQueue : IRTWorkQueue
     {
         CheckShutdown();
 
-        var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var callback = new RegisterMMCSSAsyncCallback();
 
         _logger.LogWithMMCSS(LogLevel.Trace, "RtwqBeginRegisterWorkQueueWithMMCSS", usageClass, basePriority, taskId);
@@ -365,7 +367,8 @@ internal partial class RTWorkQueue : IRTWorkQueue
             taskId,
             (RTWorkQ.AVRT_PRIORITY)basePriority,
             callback,
-            (RTWorkQ.IRtwqAsyncResult result) => {
+            (RTWorkQ.IRtwqAsyncResult result) =>
+            {
                 try
                 {
                     _logger.LogTrace("RtwqEndRegisterWorkQueueWithMMCSS");
@@ -390,14 +393,15 @@ internal partial class RTWorkQueue : IRTWorkQueue
     {
         CheckShutdown();
 
-        var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var callback = new RegisterMMCSSAsyncCallback();
 
         _logger.LogTrace("RtwqBeginUnregisterWorkQueueWithMMCSS");
 
         Marshal.ThrowExceptionForHR(WorkQueueId.RtwqBeginUnregisterWorkQueueWithMMCSS(
             callback,
-            (RTWorkQ.IRtwqAsyncResult result) => {
+            (RTWorkQ.IRtwqAsyncResult result) =>
+            {
                 try
                 {
                     _logger.LogTrace("RtwqEndUnregisterWorkQueueWithMMCSS");
@@ -424,16 +428,17 @@ internal partial class RTWorkQueue : IRTWorkQueue
         Marshal.ThrowExceptionForHR(WorkQueueId.RtwqSetLongRunning(enable));
     }
 
-    public void PutWorkItem(
+    public void PutWorkItem<TState>(
         IRTWorkQueue.TaskPriority priority,
-        Action action,
+        Action<TState?> action,
+        TState? state,
         Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     )
     {
         CheckShutdown();
 
-        var asyncResult = _parent.GetAsyncResult(0, WorkQueueId, action, afterAction);
+        var asyncResult = _parent.GetAsyncResult(0, WorkQueueId, action, state, afterAction);
         PutWorkItemCore(priority, asyncResult, ct);
     }
 
@@ -446,7 +451,7 @@ internal partial class RTWorkQueue : IRTWorkQueue
         try
         {
             _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "PutWorkItem", asyncResult.Id, asyncResult.CreatedApartmentType);
-            asyncResult.WaitingToRun();
+            asyncResult.ToWaitingToRun();
             asyncResult.BindCancellationToken(RTWorkQ.RtWorkItemKey.None, ct);
 
             Marshal.ThrowExceptionForHR(WorkQueueId.RtwqPutWorkItem(
@@ -461,14 +466,15 @@ internal partial class RTWorkQueue : IRTWorkQueue
         }
     }
 
-    public Task PutWorkItemAsync(
+    public Task PutWorkItemAsync<TState>(
         IRTWorkQueue.TaskPriority priority,
-        Action action,
+        Action<TState?> action,
+        TState? state,
         CancellationToken ct = default
     )
     {
         return _parent.ToAsync(
-            afterAction_ => PutWorkItem(priority, action, afterAction_, ct)
+            afterAction_ => PutWorkItem(priority, action, state, afterAction_, ct)
         );
     }
 }

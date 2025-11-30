@@ -44,36 +44,41 @@ public interface IRTWorkQueueManager : IDisposable, IAsyncDisposable
 
     void UnregisterMMCSS();
 
-    void PutWaitingWorkItem(
+    void PutWaitingWorkItem<TState>(
         IRTWorkQueue.TaskPriority priority,
         WaitHandle waitHandle,
-        Action action,
+        Action<TState?> action,
+        TState? state = default,
         Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     );
 
-    Task PutWaitingWorkItemAsync(
+    Task PutWaitingWorkItemAsync<TState>(
         IRTWorkQueue.TaskPriority priority,
         WaitHandle waitHandle,
-        Action action,
+        Action<TState?> action,
+        TState? state = default,
         CancellationToken ct = default
     );
 
-    void ScheduleWorkItem(
+    void ScheduleWorkItem<TState>(
         long timeout,
-        Action action,
+        Action<TState?> action,
+        TState? state = default,
         Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     );
 
-    Task ScheduleWorkItemAsync(
+    Task ScheduleWorkItemAsync<TState>(
         long timeout,
-        Action action,
+        Action<TState?> action,
+        TState? state = default,
         CancellationToken ct = default
     );
 
-    IDisposable AddPeriodicCallback(
-        Action action
+    IDisposable AddPeriodicCallback<TState>(
+        Action<TState?> action,
+        TState? state = default
     );
 }
 
@@ -94,16 +99,18 @@ public interface IRTWorkQueue : IDisposable
         MultiThreaded = 2
     }
 
-    void PutWorkItem(
+    void PutWorkItem<TState>(
         TaskPriority priority,
-        Action action,
+        Action<TState?> action,
+        TState? state = default,
         Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     );
 
-    Task PutWorkItemAsync(
+    Task PutWorkItemAsync<TState>(
         TaskPriority priority,
-        Action action, 
+        Action<TState?> action,
+        TState? state = default,
         CancellationToken ct = default
     );
 
