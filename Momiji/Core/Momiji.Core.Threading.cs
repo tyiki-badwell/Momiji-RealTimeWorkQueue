@@ -15,14 +15,14 @@ public class ApartmentType
 
     public bool IsSTA()
     {
-        if (AptType == Ole32.APTTYPE.STA || AptType == Ole32.APTTYPE.MAINSTA)
+        if (AptType is Ole32.APTTYPE.STA or Ole32.APTTYPE.MAINSTA)
         {
             return true;
         }
 
-        if (AptType == Ole32.APTTYPE.NA)
+        if (AptType is Ole32.APTTYPE.NA)
         {
-            if (AptQualifier == Ole32.APTTYPEQUALIFIER.NA_ON_STA || AptQualifier == Ole32.APTTYPEQUALIFIER.NA_ON_MAINSTA)
+            if (AptQualifier is Ole32.APTTYPEQUALIFIER.NA_ON_STA or Ole32.APTTYPEQUALIFIER.NA_ON_MAINSTA)
             {
                 return true;
             }

@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Momiji.Core.Timer;
 

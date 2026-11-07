@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Momiji.Core.Buffer;
 using Momiji.Core.Cache;
 using Momiji.Core.Threading;
+using Momiji.Internal.Log;
 using RTWorkQ = Momiji.Interop.RTWorkQ.NativeMethods;
 
 namespace Momiji.Core.RTWorkQueue;
@@ -148,7 +149,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
         CreatedApartmentType = ApartmentType.GetApartmentType();
 
-        _logger.LogTrace($"create {CreatedApartmentType}");
+        _logger.LogApartmentType(LogLevel.Trace, "create", CreatedApartmentType);
 
         _logger.LogTrace("RtwqStartup");
         Marshal.ThrowExceptionForHR(RTWorkQ.RtwqStartup());
@@ -194,11 +195,11 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
         if (_disposed)
         {
-            _logger.LogDebug($"Disposed {CreatedApartmentType} / current:{apartmentType}");
+            _logger.LogApartmentType(LogLevel.Debug, "Disposed", CreatedApartmentType, apartmentType);
             return;
         }
 
-        _logger.LogDebug($"Dispose start {CreatedApartmentType} / current:{apartmentType}");
+        _logger.LogApartmentType(LogLevel.Debug, "Dispose start", CreatedApartmentType, apartmentType);
 
         if (disposing)
         {
@@ -238,7 +239,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         }
 
         _disposed = true;
-        _logger.LogDebug($"Dispose end {CreatedApartmentType} / current:{apartmentType}");
+        _logger.LogApartmentType(LogLevel.Debug, "Dispose end", CreatedApartmentType, apartmentType);
     }
 
     public async ValueTask DisposeAsync()
@@ -270,10 +271,11 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         return Interlocked.Increment(ref _asyncResultId);
     }
 
-    internal RTWorkQueueAsyncResultPoolValue GetAsyncResult(
+    internal RTWorkQueueAsyncResultPoolValue GetAsyncResult<TState>(
         uint flags,
-        RTWorkQ.WorkQueueId queue,
-        Action action,
+        RTWorkQ.WorkQueueId workQueueId,
+        Action<TState?> action,
+        TState? state,
         Action<Exception?, CancellationToken>? afterAction = default,
         bool completeOnCancel = false
     )
@@ -282,15 +284,15 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
         var asyncResult = _pool.Get();
 
-        asyncResult.Initialize(flags, queue, action, afterAction, completeOnCancel);
+        asyncResult.Initialize(flags, workQueueId, action, state, afterAction, completeOnCancel);
 
-        _logger.LogTrace($"GetAsyncResult Id:[{asyncResult.Id}]");
+        _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "GetAsyncResult", asyncResult.Id, asyncResult.CreatedApartmentType);
         return asyncResult;
     }
 
     internal void ReleaseAsyncResult(RTWorkQueueAsyncResultPoolValue asyncResult)
     {
-        _logger.LogTrace($"ReleaseAsyncResult Id:[{asyncResult.Id}]");
+        _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "ReleaseAsyncResult", asyncResult.Id, asyncResult.CreatedApartmentType);
         _pool.Release(asyncResult.Id);
     }
 
@@ -302,7 +304,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     {
         CheckShutdown();
 
-        _logger.LogTrace($"RtwqRegisterPlatformWithMMCSS usageClass:{usageClass} taskId:{taskId} basePriority:{basePriority}");
+        _logger.LogWithMMCSS(LogLevel.Trace, "RtwqRegisterPlatformWithMMCSS", usageClass, basePriority, taskId);
         Marshal.ThrowExceptionForHR(RTWorkQ.RtwqRegisterPlatformWithMMCSS(
             usageClass,
             ref taskId,
@@ -313,7 +315,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         _param.TaskId = taskId;
         _param.BasePriority = basePriority;
 
-        _logger.LogInformation($"{_param.UsageClass} taskId:{_param.TaskId:X}");
+        _logger.LogWithMMCSS(LogLevel.Information, "RtwqRegisterPlatformWithMMCSS ok", _param.UsageClass, _param.BasePriority, _param.TaskId);
     }
 
     public void UnregisterMMCSS()
@@ -370,13 +372,14 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     }
 
     [SupportedOSPlatform("windows")]
-    public class RTWorkQueuePeriodicCallback : IDisposable
+    public class RTWorkQueuePeriodicCallback<TState> : IDisposable
     {
         private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger _logger;
         private bool _disposed;
 
-        private readonly Action _action;
+        private readonly Action<TState?> _action;
+        private readonly TState? _state;
 
         private readonly PinnedDelegate<RTWorkQ.RtwqPeriodicCallback> _callBack;
         private readonly nint _thisIUnkown;
@@ -384,12 +387,14 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
         internal RTWorkQueuePeriodicCallback(
             ILoggerFactory loggerFactory,
-            Action action
+            Action<TState?> action,
+            TState? state
         )
         {
             _loggerFactory = loggerFactory;
-            _logger = _loggerFactory.CreateLogger<RTWorkQueuePeriodicCallback>();
+            _logger = _loggerFactory.CreateLogger<RTWorkQueuePeriodicCallback<TState>>();
             _action = action;
+            _state = state;
 
             _callBack = new PinnedDelegate<RTWorkQ.RtwqPeriodicCallback>(new(PeriodicCallback));
             _thisIUnkown = Marshal.GetIUnknownForObject(this);
@@ -438,7 +443,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
 
             {
                 var count = Marshal.Release(_thisIUnkown);
-                _logger.LogInformation($"this count {count}");
+                _logger.LogWithLine(LogLevel.Information, "this count", count);
             }
 
             _callBack?.Dispose();
@@ -451,32 +456,35 @@ public class RTWorkQueueManager : IRTWorkQueueManager
             object /*IUnknown* */ context
         )
         {
-            _action();
+            _action(_state);
         }
     }
 
-    public IDisposable AddPeriodicCallback(
-        Action action    
+    public IDisposable AddPeriodicCallback<TState>(
+        Action<TState?> action,
+        TState? state = default
     )
     {
         CheckShutdown();
 
         return
-            new RTWorkQueuePeriodicCallback(
+            new RTWorkQueuePeriodicCallback<TState>(
                 _loggerFactory,
-                action
+                action,
+                state
             );
     }
 
-    public void PutWaitingWorkItem(
+    public void PutWaitingWorkItem<TState>(
         IRTWorkQueue.TaskPriority priority,
         WaitHandle waitHandle,
-        Action action,
+        Action<TState?> action,
+        TState? state,
         Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     )
     {
-        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, afterAction);
+        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, state, afterAction);
         PutWaitingWorkItemCore(priority, waitHandle, asyncResult, ct);
     }
 
@@ -489,15 +497,15 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     {
         try
         {
-            _logger.LogTrace($"RtwqPutWaitingWorkItem Id:[{asyncResult.Id}].");
-            asyncResult.WaitingToRun();
+            _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "RtwqPutWaitingWorkItem", asyncResult.Id, asyncResult.CreatedApartmentType);
+            asyncResult.ToWaitingToRun();
             Marshal.ThrowExceptionForHR(RTWorkQ.RtwqPutWaitingWorkItem(
                 waitHandle.SafeWaitHandle,
                 (RTWorkQ.AVRT_PRIORITY)priority,
                 asyncResult.RtwqAsyncResult,
                 out var key
             ));
-            _logger.LogTrace($"RtwqPutWaitingWorkItem Id:[{asyncResult.Id}] {key.Key} ok.");
+            _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "RtwqPutWaitingWorkItem ok", asyncResult.Id, asyncResult.CreatedApartmentType, key.Key);
 
             asyncResult.BindCancellationToken(key, ct);
         }
@@ -508,15 +516,16 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         }
     }
 
-    public Task PutWaitingWorkItemAsync(
+    public Task PutWaitingWorkItemAsync<TState>(
         IRTWorkQueue.TaskPriority priority,
         WaitHandle waitHandle,
-        Action action,
+        Action<TState?> action,
+        TState? state,
         CancellationToken ct = default
     )
     {
         return ToAsync(
-            afterAction_ => PutWaitingWorkItem(priority, waitHandle, action, afterAction_, ct)
+            afterAction_ => PutWaitingWorkItem(priority, waitHandle, action, state, afterAction_, ct)
         );
     }
 
@@ -524,7 +533,7 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         Action<Action<Exception?, CancellationToken>?> action
     )
     {
-        var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         void afterAction_(Exception? error, CancellationToken ct)
         {
@@ -550,14 +559,15 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         return tcs.Task;
     }
 
-    public void ScheduleWorkItem(
+    public void ScheduleWorkItem<TState>(
         long timeout,
-        Action action,
+        Action<TState?> action,
+        TState? state,
         Action<Exception?, CancellationToken>? afterAction = default,
         CancellationToken ct = default
     )
     {
-        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, afterAction, true);
+        var asyncResult = GetAsyncResult(0, RTWorkQ.WorkQueueId.None, action, state, afterAction, true);
         ScheduleWorkItemCore(timeout, asyncResult, ct);
     }
 
@@ -569,8 +579,8 @@ public class RTWorkQueueManager : IRTWorkQueueManager
     {
         try
         {
-            _logger.LogTrace($"RtwqScheduleWorkItem Id:[{asyncResult.Id}].");
-            asyncResult.WaitingToRun();
+            _logger.LogRTWorkQueueAsyncResultPoolValue(LogLevel.Trace, "RtwqScheduleWorkItem", asyncResult.Id, asyncResult.CreatedApartmentType);
+            asyncResult.ToWaitingToRun();
             Marshal.ThrowExceptionForHR(RTWorkQ.RtwqScheduleWorkItem(
                 asyncResult.RtwqAsyncResult,
                 timeout,
@@ -586,14 +596,15 @@ public class RTWorkQueueManager : IRTWorkQueueManager
         }
     }
 
-    public Task ScheduleWorkItemAsync(
+    public Task ScheduleWorkItemAsync<TState>(
         long timeout,
-        Action action,
+        Action<TState?> action,
+        TState? state,
         CancellationToken ct = default
     )
     {
         return ToAsync(
-            afterAction_ => ScheduleWorkItem(timeout, action, afterAction_, ct)
+            afterAction_ => ScheduleWorkItem(timeout, action, state, afterAction_, ct)
         );
     }
 }

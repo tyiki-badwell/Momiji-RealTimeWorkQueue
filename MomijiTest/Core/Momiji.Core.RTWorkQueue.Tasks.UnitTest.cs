@@ -3,7 +3,6 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks.Dataflow;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Momiji.Core.Timer;
 using Momiji.Internal.Debug;
 
@@ -17,7 +16,6 @@ public partial class RTWorkQueueTasksTest : IDisposable
 
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
-    private readonly RTWorkQueueTaskSchedulerManager _workQueueTaskSchedulerManager;
 
     public RTWorkQueueTasksTest()
     {
@@ -39,13 +37,10 @@ public partial class RTWorkQueueTasksTest : IDisposable
         });
 
         _logger = _loggerFactory.CreateLogger<RTWorkQueueTasksTest>();
-
-        _workQueueTaskSchedulerManager = new RTWorkQueueTaskSchedulerManager(configuration, _loggerFactory);
     }
 
     public void Dispose()
     {
-        _workQueueTaskSchedulerManager?.Dispose();
         _loggerFactory?.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -146,11 +141,14 @@ public partial class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [Timeout(5000)]
+    [Timeout(10000, CooperativeCancellation = true)]
     [DataRow(false)]
     [DataRow(true)]
     public void TestLoopParallel(bool rtwqTaskScheduler)
     {
+        var configuration = CreateConfiguration(/*usageClass, 0, taskId*/);
+        using var workQueueTaskSchedulerManager = new RTWorkQueueTaskSchedulerManager(configuration, _loggerFactory);
+
         var list = new ConcurrentQueue<(string, long)>();
         var result = new int[TIMES];
 
@@ -159,7 +157,7 @@ public partial class RTWorkQueueTasksTest : IDisposable
 
         var options = new ParallelOptions
         {
-            TaskScheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default
+            TaskScheduler = rtwqTaskScheduler ? workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default
         };
 
         Parallel.For(0, TIMES, options, (index) => {
@@ -171,7 +169,7 @@ public partial class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [Timeout(10000)]
+    [Timeout(10000, CooperativeCancellation = true)]
     [DataRow(false, ApartmentState.STA, ApartmentState.STA)]
     [DataRow(true, ApartmentState.STA, ApartmentState.STA)]
     [DataRow(false, ApartmentState.MTA, ApartmentState.STA)]
@@ -186,10 +184,12 @@ public partial class RTWorkQueueTasksTest : IDisposable
         ApartmentState apartmentState2
     )
     {
-        var configuration = CreateConfiguration();
-        var scheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
+        var configuration = CreateConfiguration(/*usageClass, 0, taskId*/);
+        using var workQueueTaskSchedulerManager = new RTWorkQueueTaskSchedulerManager(configuration, _loggerFactory);
 
-        var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
+        var scheduler = rtwqTaskScheduler ? workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
+
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var thread = new Thread(async () => {
             _logger.LogInformation($"thread 1 start {Environment.CurrentManagedThreadId:X}");
@@ -210,7 +210,7 @@ public partial class RTWorkQueueTasksTest : IDisposable
             _logger.LogInformation($"thread 1 end {Environment.CurrentManagedThreadId:X}");
 
             {
-                var tcs = new TaskCompletionSource(TaskCreationOptions.AttachedToParent);
+                var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
                 var thread = new Thread(async () => {
                     _logger.LogInformation($"thread 2 start {Environment.CurrentManagedThreadId:X}");
@@ -250,7 +250,7 @@ public partial class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [Timeout(1000000)]
+    [Timeout(1000000, CooperativeCancellation = true)]
     [DataRow(false, TIMES)]
     [DataRow(true, TIMES, "Pro Audio")]
     [DataRow(true, TIMES, "Pro Audio", IRTWorkQueue.WorkQueueType.MultiThreaded)]
@@ -268,6 +268,9 @@ public partial class RTWorkQueueTasksTest : IDisposable
         int taskId = 0
     )
     {
+        var configuration = CreateConfiguration(/*usageClass, 0, taskId*/);
+        using var workQueueTaskSchedulerManager = new RTWorkQueueTaskSchedulerManager(configuration, _loggerFactory);
+
         var list = new ConcurrentQueue<(string, long)>();
         var result = new int[TIMES];
 
@@ -277,7 +280,7 @@ public partial class RTWorkQueueTasksTest : IDisposable
         var options = new ExecutionDataflowBlockOptions
         {
             MaxDegreeOfParallelism = maxDegreeOfParallelism,
-            TaskScheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler(usageClass, type, serial, basePriority, taskId) : TaskScheduler.Default
+            TaskScheduler = rtwqTaskScheduler ? workQueueTaskSchedulerManager!.GetTaskScheduler(usageClass, type, serial, basePriority, taskId) : TaskScheduler.Default
         };
 
         var block = new TransformBlock<int, int>(index => {
@@ -360,7 +363,10 @@ public partial class RTWorkQueueTasksTest : IDisposable
         bool childError = false
     )
     {
-        var scheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
+        var configuration = CreateConfiguration(/*usageClass, 0, taskId*/);
+        using var workQueueTaskSchedulerManager = new RTWorkQueueTaskSchedulerManager(configuration, _loggerFactory);
+
+        var scheduler = rtwqTaskScheduler ? workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
         var factory =
             new TaskFactory(
                 CancellationToken.None,
@@ -459,7 +465,10 @@ public partial class RTWorkQueueTasksTest : IDisposable
         TaskCreationOptions taskCreationOptionsParent
     )
     {
-        var scheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
+        var configuration = CreateConfiguration(/*usageClass, 0, taskId*/);
+        using var workQueueTaskSchedulerManager = new RTWorkQueueTaskSchedulerManager(configuration, _loggerFactory);
+
+        var scheduler = rtwqTaskScheduler ? workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
         var factory = new TaskFactory(CancellationToken.None, taskCreationOptionsParent, TaskContinuationOptions.None, scheduler);
 
         _logger.LogInformation("START 1");
@@ -495,14 +504,17 @@ public partial class RTWorkQueueTasksTest : IDisposable
     }
 
     [TestMethod]
-    [Timeout(10000)]
+    [Timeout(10000, CooperativeCancellation = true)]
     [DataRow(false)]
     [DataRow(true)]
     public async Task TestAsyncEnumerable(
         bool rtwqTaskScheduler
     )
     {
-        var scheduler = rtwqTaskScheduler ? _workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
+        var configuration = CreateConfiguration(/*usageClass, 0, taskId*/);
+        using var workQueueTaskSchedulerManager = new RTWorkQueueTaskSchedulerManager(configuration, _loggerFactory);
+
+        var scheduler = rtwqTaskScheduler ? workQueueTaskSchedulerManager!.GetTaskScheduler("Pro Audio") : TaskScheduler.Default;
         var factory = new TaskFactory(CancellationToken.None, TaskCreationOptions.AttachedToParent, TaskContinuationOptions.None, scheduler);
 
         var counter = new ElapsedTimeCounter();

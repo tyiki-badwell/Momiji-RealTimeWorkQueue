@@ -1,0 +1,15 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="Benchmark/Benchmark.csproj" Id="0dc42760-9445-4a71-a23b-37a85d54f9a0" />
+  <Project Path="Momiji/Momiji-RealTimeWorkQueue.csproj" />
+  <Project Path="MomijiSample/WASAPI/WASAPI.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|x86" Project="x86" />
+    <Platform Solution="Debug|Any CPU" Project="x86" />
+  </Project>
+  <Project Path="MomijiTest/MomijiTest.csproj" />
+</Solution>
